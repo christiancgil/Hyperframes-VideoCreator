@@ -79,18 +79,112 @@ else
   VIDEO=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | head -1)
 fi
 
-# Si hay audio separado, mezclarlo con el vídeo
+# ── ALINEACIÓN DE AUDIO EXTERNO ──────────────────────────────────────────────
 if [ "$HAS_SEPARATE_AUDIO" = true ]; then
   AUDIO_FILE=$(ls "$BASE/input"/*.mp3 "$BASE/input"/*.wav "$BASE/input"/*.m4a "$BASE/input"/*.aac 2>/dev/null | head -1)
-  log "Mezclando audio separado: $AUDIO_FILE"
-  $FFMPEG -i "$VIDEO" -i "$AUDIO_FILE" \
-    -c:v copy -c:a aac -b:a 192k -map 0:v:0 -map 1:a:0 \
-    "$BASE/input/video_con_audio.mp4" -y \
+  log "Audio externo detectado: $AUDIO_FILE"
+
+  # Convertir audio a WAV mono 16kHz para análisis (más rápido)
+  $FFMPEG -i "$AUDIO_FILE" -ar 16000 -ac 1 "$BASE/input/ext_audio_ref.wav" -y \
     2>>"$BASE/projects/$PROJECT/pipeline.log"
-  VIDEO="$BASE/input/video_con_audio.mp4"
+
+  # Verificar si el vídeo tiene pista de audio propia
+  HAS_VIDEO_AUDIO=$($FFPROBE -v quiet -select_streams a:0 \
+    -show_entries stream=codec_type -of csv=p=0 "$VIDEO" 2>/dev/null || echo "")
+
+  if [ -n "$HAS_VIDEO_AUDIO" ]; then
+    log "Vídeo tiene audio propio — calculando offset por correlación..."
+
+    # Extraer audio del vídeo a WAV para comparar
+    $FFMPEG -i "$VIDEO" -ar 16000 -ac 1 "$BASE/input/vid_audio_ref.wav" -y \
+      2>>"$BASE/projects/$PROJECT/pipeline.log"
+
+    # Calcular offset usando Python (cross-correlación de primers 60s)
+    OFFSET=$(python3 - <<PYEOF
+import subprocess, struct, math, sys
+
+def read_wav_samples(path, max_seconds=60):
+    """Lee muestras PCM de un WAV sin dependencias externas."""
+    with open(path, 'rb') as f:
+        f.read(44)  # saltar header WAV
+        raw = f.read(max_seconds * 16000 * 2)  # 16kHz, 16bit
+    n = len(raw) // 2
+    return [struct.unpack_from('<h', raw, i*2)[0] / 32768.0 for i in range(n)]
+
+try:
+    vid = read_wav_samples('/opt/hyperframes/input/vid_audio_ref.wav')
+    ext = read_wav_samples('/opt/hyperframes/input/ext_audio_ref.wav')
+
+    # Normalizar RMS
+    def rms(s): return math.sqrt(sum(x*x for x in s) / len(s)) if s else 1
+    vid = [x / (rms(vid) or 1) for x in vid]
+    ext = [x / (rms(ext) or 1) for x in ext]
+
+    # Cross-correlación simplificada (ventana de ±10s = ±160000 samples a 16kHz)
+    SR = 16000
+    MAX_OFFSET = SR * 10
+    best_offset, best_score = 0, -1
+
+    step = SR // 10  # saltos de 100ms para velocidad
+    for lag in range(-MAX_OFFSET, MAX_OFFSET, step):
+        score = 0
+        count = 0
+        for i in range(0, min(len(vid), len(ext), SR * 30), SR // 4):
+            vi = i + lag
+            ei = i
+            if 0 <= vi < len(vid) and 0 <= ei < len(ext):
+                score += vid[vi] * ext[ei]
+                count += 1
+        if count > 0 and score / count > best_score:
+            best_score = score / count
+            best_offset = lag
+
+    offset_sec = best_offset / SR
+    print(f"{offset_sec:.3f}")
+except Exception as e:
+    print("0.000", file=sys.stderr)
+    print("0.000")
+PYEOF
+)
+    log "Offset calculado: ${OFFSET}s"
+    rm -f "$BASE/input/vid_audio_ref.wav"
+
+  else
+    log "Vídeo sin audio propio — usando audio externo desde el inicio (offset 0)"
+    OFFSET="0.000"
+  fi
+
+  rm -f "$BASE/input/ext_audio_ref.wav"
+
+  # Aplicar offset y reemplazar audio del vídeo con el externo alineado
+  OFFSET_FLOAT=$(echo "$OFFSET" | tr -d '[:space:]')
+  OFFSET_MS=$(echo "$OFFSET_FLOAT * 1000 / 1" | bc 2>/dev/null || echo "0")
+
+  if [ "$(echo "$OFFSET_FLOAT >= 0" | bc -l)" = "1" ]; then
+    # Audio externo empieza DESPUÉS del vídeo → recortar el inicio del audio
+    $FFMPEG -i "$VIDEO" -ss "$OFFSET_FLOAT" -i "$AUDIO_FILE" \
+      -c:v copy -c:a aac -b:a 192k \
+      -map 0:v:0 -map 1:a:0 \
+      -shortest \
+      "$BASE/input/video_sincronizado.mp4" -y \
+      2>>"$BASE/projects/$PROJECT/pipeline.log"
+  else
+    # Audio externo empieza ANTES del vídeo → añadir silencio al inicio del audio
+    ABS_OFFSET=$(echo "$OFFSET_FLOAT * -1" | bc -l)
+    $FFMPEG -i "$VIDEO" -i "$AUDIO_FILE" \
+      -filter_complex "[1:a]adelay=${OFFSET_MS}|${OFFSET_MS}[a_delayed]" \
+      -map 0:v:0 -map "[a_delayed]" \
+      -c:v copy -c:a aac -b:a 192k \
+      -shortest \
+      "$BASE/input/video_sincronizado.mp4" -y \
+      2>>"$BASE/projects/$PROJECT/pipeline.log"
+  fi
+
+  VIDEO="$BASE/input/video_sincronizado.mp4"
+  log "Audio sincronizado con offset ${OFFSET}s → $VIDEO"
 fi
 
-log "Vídeo listo: $VIDEO"
+log "Vídeo listo para procesar: $VIDEO"
 
 # ── FASE 1: Detectar resolución y transcribir ────────────────────────────────
 VIDEO_W=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=width   -of csv=p=0 "$VIDEO")
