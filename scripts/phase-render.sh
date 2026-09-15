@@ -60,37 +60,33 @@ for (const beat of beats || []) {
   const movFile = path.join(COMP_DIR, \`\${beat.id}.mov\`);
   if (fs.existsSync(movFile)) { console.log(\`Saltando \${beat.id}: ya renderizado\`); continue; }
 
-  const framesDir = path.join(COMP_DIR, \`frames_\${beat.id}\`);
-  fs.mkdirSync(framesDir, { recursive: true });
-
   // Patch HTML body dimensions to match render resolution
   const scaledHtml = beat.html_content
     .replace(/width:\s*\d+px/g, \`width: \${render_w}px\`)
     .replace(/height:\s*\d+px/g, \`height: \${render_h}px\`);
 
-  // Fresh browser per beat — prevents Chrome memory accumulation across beats
+  // Take a single screenshot after CSS animations complete (all are <1s).
+  // Repeated screenshots in headless Chrome software-rendering crash at ~90 frames.
+  // The overlay content visibility matters more than the 0.3s entry animation.
   const browser = await puppeteer.launch({ executablePath: CHROMIUM, args: LAUNCH_ARGS });
   const page = await browser.newPage();
   await page.setViewport({ width: render_w, height: render_h, deviceScaleFactor: 1 });
   await page.setContent(scaledHtml, { waitUntil: 'load', timeout: 30000 });
   await page.evaluate(() => { document.body.style.background = 'transparent'; });
+  // Wait 1.5s for all CSS animations to complete and reach their final state
+  await new Promise(r => setTimeout(r, 1500));
 
-  const totalFrames = Math.ceil(beat.duration * render_fps);
-  for (let f = 0; f < totalFrames; f++) {
-    await page.screenshot({
-      path: path.join(framesDir, \`frame_\${String(f).padStart(4,'0')}.png\`),
-      omitBackground: true
-    });
-    if (totalFrames > 30 && f % 30 === 0) console.log(\`  \${beat.id}: \${f}/\${totalFrames} frames\`);
-  }
+  const frameFile = path.join(COMP_DIR, \`\${beat.id}_frame.png\`);
+  await page.screenshot({ path: frameFile, omitBackground: true });
   await page.close();
   await browser.close();
 
-  // Scale overlay back to source resolution if we downscaled for rendering
+  // Loop the single frame to full beat duration at source framerate
   const scaleFilter = scale < 1 ? \`-vf scale=\${video_w}:\${video_h}\` : '';
-  execSync(\`\${FFMPEG} -framerate \${render_fps} -i "\${framesDir}/frame_%04d.png" \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
+  execSync(\`\${FFMPEG} -loop 1 -framerate \${fps} -i "\${frameFile}" -t \${beat.duration} \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
+  execSync(\`rm -f "\${frameFile}"\`);
   execSync(\`rm -rf "\${framesDir}"\`);
-  console.log(\`Renderizado: \${beat.id} → \${movFile}\`);
+  console.log(\`Renderizado: \${beat.id} → \${movFile} (\${beat.duration}s)\`);
 }
 EOF
 
