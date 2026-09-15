@@ -4,7 +4,10 @@ PROJECT="$1"
 BASE=/opt/hyperframes
 FFMPEG=/usr/bin/ffmpeg
 FFPROBE=/usr/bin/ffprobe
-CHROMIUM=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo "chromium")
+# Use Puppeteer's bundled Chrome — the snap system chromium is AppArmor-confined
+# and blocks process_vm_readv (syscall 330), crashing mid-render.
+CHROMIUM=$(node -e "try{const p=require('/opt/hyperframes/node_modules/puppeteer');console.log(p.executablePath())}catch(e){}" 2>/dev/null | head -1)
+[ -z "$CHROMIUM" ] && CHROMIUM=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo "chromium")
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$BASE/projects/$PROJECT/pipeline.log"; }
 
