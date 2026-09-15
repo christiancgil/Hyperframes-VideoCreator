@@ -6,7 +6,7 @@ FFMPEG=/usr/bin/ffmpeg
 FFPROBE=/usr/bin/ffprobe
 # Use Puppeteer's bundled Chrome — the snap system chromium is AppArmor-confined
 # and blocks process_vm_readv (syscall 330), crashing mid-render.
-CHROMIUM=$(node -e "try{const p=require('/opt/hyperframes/node_modules/puppeteer');console.log(p.executablePath())}catch(e){}" 2>/dev/null | head -1)
+CHROMIUM=$(find /root/.cache/puppeteer -name 'chrome' -type f 2>/dev/null | head -1)
 [ -z "$CHROMIUM" ] && CHROMIUM=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo "chromium")
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$BASE/projects/$PROJECT/pipeline.log"; }
@@ -19,7 +19,7 @@ EDITED_VIDEO="$BASE/output/${PROJECT}_edited.mp4"
 [ ! -f "$EDITED_VIDEO" ] && EDITED_VIDEO="$BASE/output/merged.mp4"
 FINAL_VIDEO="$BASE/output/${PROJECT}_final.mp4"
 
-log "Renderizando beats con Puppeteer..."
+log "Renderizando beats con Puppeteer... (Chrome: $CHROMIUM)"
 
 # Renderizar cada beat HTML → ProRes 4444
 node --input-type=module <<EOF 2>>"$BASE/projects/$PROJECT/pipeline.log"
@@ -39,12 +39,10 @@ const scale = video_w > MAX_W ? MAX_W / video_w : 1;
 const render_w = Math.round(video_w * scale);
 const render_h = Math.round(video_h * scale);
 // Render animations at 30fps — CSS transitions don't need 60fps.
-// ffmpeg will handle framerate adaptation during compositing.
 const render_fps = Math.min(fps, 30);
 
 let puppeteer;
 try {
-  const pkg = JSON.parse(fs.readFileSync('/opt/hyperframes/node_modules/puppeteer/package.json', 'utf8'));
   puppeteer = (await import('/opt/hyperframes/node_modules/puppeteer/lib/esm/puppeteer/puppeteer.js')).default;
 } catch {
   try { puppeteer = (await import('puppeteer')).default; }
@@ -53,6 +51,7 @@ try {
 
 const LAUNCH_ARGS = ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new','--allow-file-access-from-files','--disable-web-security'];
 
+console.log(\`Chrome: \${CHROMIUM}\`);
 console.log(\`Render config: \${render_w}x\${render_h} @ \${render_fps}fps (source: \${video_w}x\${video_h} @ \${fps}fps)\`);
 
 for (const beat of beats || []) {
@@ -97,6 +96,13 @@ EOF
 
 log "Beats renderizados. Compositando vídeo final..."
 
+# Exports must be set BEFORE the heredoc that reads them via process.env
+export BEATS_FILE="$BASE/projects/$PROJECT/beats_with_paths.json"
+export COMP_DIR="$COMP_DIR"
+export FFMPEG="$FFMPEG"
+export EDITED_VIDEO="$EDITED_VIDEO"
+export FINAL_VIDEO="$FINAL_VIDEO"
+
 # Construir filtro de compositing dinámicamente
 node --input-type=module <<'EOF2' > /tmp/composite_cmd_${PROJECT}.sh
 import fs from 'fs';
@@ -130,12 +136,6 @@ if (filterParts.length === 0) {
 }
 EOF2
 
-export BEATS_FILE="$BASE/projects/$PROJECT/beats_with_paths.json"
-export COMP_DIR="$COMP_DIR"
-export FFMPEG="$FFMPEG"
-export EDITED_VIDEO="$EDITED_VIDEO"
-export FINAL_VIDEO="$FINAL_VIDEO"
-
 COMPOSITE_CMD=$(node --input-type=module /tmp/composite_cmd_${PROJECT}.sh 2>/dev/null || echo "")
 
 if [ -n "$COMPOSITE_CMD" ]; then
@@ -153,5 +153,5 @@ $FFMPEG -i "$FINAL_VIDEO" \
   "$BASE/projects/$PROJECT/preview_%d.png" -y \
   2>/dev/null || true
 
-DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$FINAL_VIDEO")
+DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$FINAL_VIDEO" | cut -d',' -f1 | tr -d '[:space:]')
 log "Render completo: $FINAL_VIDEO (${DURATION}s)"
