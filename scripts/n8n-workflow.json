@@ -1,0 +1,365 @@
+{
+  "name": "Hyperframes Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "start-pipeline",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "🎬 Webhook - Iniciar Pipeline",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "start-pipeline"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/start",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"client_name\": \"{{ $json.body.client_name }}\",\n  \"project\": \"{{ $json.body.project }}\",\n  \"callback_url\": \"https://n8n.esencialabs.co/webhook/pipeline-complete\",\n  \"style\": \"{{ $json.body.style || 'default' }}\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "▶️ VPS - Iniciar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "=⚙️ *Pipeline iniciado*\n\n👤 Cliente: `{{ $('🎬 Webhook - Iniciar Pipeline').item.json.body.client_name }}`\n📁 Proyecto: `{{ $('🎬 Webhook - Iniciar Pipeline').item.json.body.project }}`\n\n_Transcribiendo y procesando... te aviso cuando esté listo._",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "📱 Telegram - Iniciado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [680, 300],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pipeline-complete",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "✅ Webhook - Pipeline Completo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 560],
+      "webhookId": "pipeline-complete"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.body.status }}",
+              "rightValue": "done",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "🔀 ¿Éxito o Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 560]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-1",
+              "name": "last_project",
+              "value": "={{ $json.body.project }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-2",
+              "name": "drive_output",
+              "value": "={{ $json.body.drive_output }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-3",
+              "name": "duration",
+              "value": "={{ $json.body.duration }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "📋 Guardar Datos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 460]
+    },
+    {
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "=✅ *¡Vídeo listo!*\n\n👤 Cliente: `{{ $json.body.client_name || $json.body.project }}`\n📁 Proyecto: `{{ $json.body.project }}`\n⏱ Duración: `{{ ($json.body.duration / 60).toFixed(1) }} min`\n\n📂 *Resultado en Drive:*\n`{{ $json.body.drive_output }}`\n\n💬 _Si algo no se ve bien, escríbeme la corrección y la aplico._\n_Ejemplo: \"El texto del beat 2 es muy pequeño\"_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "📱 Telegram - Éxito",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [900, 460],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "=❌ *Error en el pipeline*\n\n📁 Proyecto: `{{ $json.body.project }}`\n⚠️ Error: `{{ $json.body.error }}`\n\n_Revisa el log en el VPS:_\n`ssh divisual-vps \"tail -50 /opt/hyperframes/projects/{{ $json.body.project }}/pipeline.log\"`",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "📱 Telegram - Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [900, 660],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "💬 Telegram - Escuchar Correcciones",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 820],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-2",
+              "leftValue": "={{ $json.message.chat.id.toString() }}",
+              "rightValue": "5126250705",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000010",
+      "name": "🔐 ¿Es mi chat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 820]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear el mensaje de corrección\n// Formatos aceptados:\n// \"corrige: texto de corrección\" → usa el último proyecto\n// \"corrige proyecto_id: texto\" → especifica el proyecto\n\nconst msg = $input.item.json.message.text || '';\n\n// Guardar último proyecto en static data\nconst staticData = $getWorkflowStaticData('global');\n\nlet project = staticData.last_project || '';\nlet correction = '';\n\nconst match = msg.match(/^corrige\\s+([^:]+):\\s*(.+)/i);\nif (match) {\n  // Formato: \"corrige proyecto_id: texto\"\n  project = match[1].trim();\n  correction = match[2].trim();\n} else {\n  // Cualquier mensaje libre → corrección para el último proyecto\n  correction = msg.trim();\n}\n\nif (!project) {\n  return [{ json: { error: 'No hay proyecto activo. Inicia un pipeline primero.' } }];\n}\n\nif (!correction) {\n  return [{ json: { error: 'Escribe la corrección que quieres aplicar.' } }];\n}\n\nreturn [{ json: { project, correction, valid: true } }];"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000011",
+      "name": "🔍 Parsear Corrección",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 740]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-3",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000012",
+      "name": "🔀 ¿Corrección válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 740]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://187.124.238.94:4000/correct/{{ $json.project }}",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"correction\": \"{{ $json.correction }}\",\n  \"callback_url\": \"https://n8n.esencialabs.co/webhook/pipeline-complete\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000013",
+      "name": "🔧 VPS - Aplicar Corrección",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 680]
+    },
+    {
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "=🔄 *Aplicando corrección...*\n\n📁 Proyecto: `{{ $json.project }}`\n✏️ Corrección: _{{ $json.correction }}_\n\n_Re-renderizando los beats afectados. Te aviso cuando esté listo._",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000014",
+      "name": "📱 Telegram - Corrigiendo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 680],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "=⚠️ {{ $json.error }}",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000015",
+      "name": "📱 Telegram - Error Corrección",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 860],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guardar el proyecto completado en static data para correcciones futuras\nconst staticData = $getWorkflowStaticData('global');\nstaticData.last_project = $input.item.json.body.project;\nreturn $input.all();"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000016",
+      "name": "💾 Guardar Último Proyecto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 560]
+    }
+  ],
+  "connections": {
+    "🎬 Webhook - Iniciar Pipeline": {
+      "main": [[{ "node": "▶️ VPS - Iniciar", "type": "main", "index": 0 }]]
+    },
+    "▶️ VPS - Iniciar": {
+      "main": [[{ "node": "📱 Telegram - Iniciado", "type": "main", "index": 0 }]]
+    },
+    "✅ Webhook - Pipeline Completo": {
+      "main": [[{ "node": "🔀 ¿Éxito o Error?", "type": "main", "index": 0 }]]
+    },
+    "🔀 ¿Éxito o Error?": {
+      "main": [
+        [{ "node": "💾 Guardar Último Proyecto", "type": "main", "index": 0 }],
+        [{ "node": "📱 Telegram - Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "💾 Guardar Último Proyecto": {
+      "main": [[{ "node": "📱 Telegram - Éxito", "type": "main", "index": 0 }]]
+    },
+    "💬 Telegram - Escuchar Correcciones": {
+      "main": [[{ "node": "🔐 ¿Es mi chat?", "type": "main", "index": 0 }]]
+    },
+    "🔐 ¿Es mi chat?": {
+      "main": [
+        [{ "node": "🔍 Parsear Corrección", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "🔍 Parsear Corrección": {
+      "main": [[{ "node": "🔀 ¿Corrección válida?", "type": "main", "index": 0 }]]
+    },
+    "🔀 ¿Corrección válida?": {
+      "main": [
+        [{ "node": "🔧 VPS - Aplicar Corrección", "type": "main", "index": 0 }],
+        [{ "node": "📱 Telegram - Error Corrección", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔧 VPS - Aplicar Corrección": {
+      "main": [[{ "node": "📱 Telegram - Corrigiendo", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "hyperframes-v1",
+  "triggerCount": 3,
+  "tags": [{ "name": "Hyperframes" }]
+}
