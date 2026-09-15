@@ -40,19 +40,18 @@ try {
 
 const browser = await puppeteer.launch({
   executablePath: CHROMIUM,
-  args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new']
+  args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new','--allow-file-access-from-files','--disable-web-security']
 });
 
 for (const beat of beats || []) {
-  const htmlFile = path.join(COMP_DIR, 'compositions', \`\${beat.id}.html\`);
-  if (!fs.existsSync(htmlFile)) { console.log(\`Saltando \${beat.id}: HTML no encontrado\`); continue; }
+  if (!beat.html_content) { console.log(\`Saltando \${beat.id}: sin html_content\`); continue; }
 
   const framesDir = path.join(COMP_DIR, \`frames_\${beat.id}\`);
   fs.mkdirSync(framesDir, { recursive: true });
 
   const page = await browser.newPage();
   await page.setViewport({ width: video_w, height: video_h, deviceScaleFactor: 1 });
-  await page.goto(\`file://\${htmlFile}\`, { waitUntil: 'networkidle0', timeout: 30000 });
+  await page.setContent(beat.html_content, { waitUntil: 'load', timeout: 30000 });
   await page.evaluate(() => { document.body.style.background = 'transparent'; });
 
   const totalFrames = Math.ceil(beat.duration * fps);
