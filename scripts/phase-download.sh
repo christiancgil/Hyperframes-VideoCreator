@@ -103,14 +103,14 @@ fi
 # Unir clips si hay varios
 if [ "$CLIP_COUNT" -gt 1 ]; then
   log "Uniendo $CLIP_COUNT clips..."
-  CLIPS=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | sort)
+  CLIPS=$(find "$BASE/input" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.mts" -o -iname "*.avi" \) 2>/dev/null | sort)
   for clip in $CLIPS; do echo "file '$clip'"; done > "$BASE/input/concat_list.txt"
   $FFMPEG -f concat -safe 0 -i "$BASE/input/concat_list.txt" \
     -c:v copy -c:a aac -b:a 192k "$BASE/input/video_completo.mp4" -y \
     2>>"$BASE/projects/$PROJECT/pipeline.log"
   VIDEO="$BASE/input/video_completo.mp4"
 else
-  VIDEO=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | head -1)
+  VIDEO=$(find "$BASE/input" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.mts" -o -iname "*.avi" \) 2>/dev/null | sort | head -1)
 fi
 
 # Sincronizar audio externo si existe
