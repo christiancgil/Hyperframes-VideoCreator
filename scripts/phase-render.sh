@@ -29,6 +29,16 @@ const COMP_DIR = '$COMP_DIR';
 const FFMPEG = '$FFMPEG';
 const CHROMIUM = '$CHROMIUM';
 
+// Cap render resolution to avoid Chrome OOM on 2-CPU VPS.
+// CSS animations are vector-based — 1080p render quality is indistinguishable at 4K.
+const MAX_W = 1920;
+const scale = video_w > MAX_W ? MAX_W / video_w : 1;
+const render_w = Math.round(video_w * scale);
+const render_h = Math.round(video_h * scale);
+// Render animations at 30fps — CSS transitions don't need 60fps.
+// ffmpeg will handle framerate adaptation during compositing.
+const render_fps = Math.min(fps, 30);
+
 let puppeteer;
 try {
   const pkg = JSON.parse(fs.readFileSync('/opt/hyperframes/node_modules/puppeteer/package.json', 'utf8'));
@@ -43,18 +53,25 @@ const browser = await puppeteer.launch({
   args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new','--allow-file-access-from-files','--disable-web-security']
 });
 
+console.log(\`Render config: \${render_w}x\${render_h} @ \${render_fps}fps (source: \${video_w}x\${video_h} @ \${fps}fps)\`);
+
 for (const beat of beats || []) {
   if (!beat.html_content) { console.log(\`Saltando \${beat.id}: sin html_content\`); continue; }
 
   const framesDir = path.join(COMP_DIR, \`frames_\${beat.id}\`);
   fs.mkdirSync(framesDir, { recursive: true });
 
+  // Patch HTML body dimensions to match render resolution
+  const scaledHtml = beat.html_content
+    .replace(/width:\s*\d+px/g, \`width: \${render_w}px\`)
+    .replace(/height:\s*\d+px/g, \`height: \${render_h}px\`);
+
   const page = await browser.newPage();
-  await page.setViewport({ width: video_w, height: video_h, deviceScaleFactor: 1 });
-  await page.setContent(beat.html_content, { waitUntil: 'load', timeout: 30000 });
+  await page.setViewport({ width: render_w, height: render_h, deviceScaleFactor: 1 });
+  await page.setContent(scaledHtml, { waitUntil: 'load', timeout: 30000 });
   await page.evaluate(() => { document.body.style.background = 'transparent'; });
 
-  const totalFrames = Math.ceil(beat.duration * fps);
+  const totalFrames = Math.ceil(beat.duration * render_fps);
   for (let f = 0; f < totalFrames; f++) {
     await page.screenshot({
       path: path.join(framesDir, \`frame_\${String(f).padStart(4,'0')}.png\`),
@@ -65,7 +82,9 @@ for (const beat of beats || []) {
   await page.close();
 
   const movFile = path.join(COMP_DIR, \`\${beat.id}.mov\`);
-  execSync(\`\${FFMPEG} -framerate \${fps} -i "\${framesDir}/frame_%04d.png" -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
+  // Scale overlay back to source resolution if we downscaled for rendering
+  const scaleFilter = scale < 1 ? \`-vf scale=\${video_w}:\${video_h}\` : '';
+  execSync(\`\${FFMPEG} -framerate \${render_fps} -i "\${framesDir}/frame_%04d.png" \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
   execSync(\`rm -rf "\${framesDir}"\`);
   console.log(\`Renderizado: \${beat.id} → \${movFile}\`);
 }
