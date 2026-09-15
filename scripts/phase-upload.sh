@@ -9,7 +9,7 @@ log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$BASE/projects/$PROJECT/pipeli
 FINAL_VIDEO="$BASE/output/${PROJECT}_final.mp4"
 [ ! -f "$FINAL_VIDEO" ] && echo "ERROR: $FINAL_VIDEO no encontrado" && exit 1
 
-GDRIVE_OUTPUT="hf:${CLIENT_NAME}/Output"
+GDRIVE_OUTPUT="hf:${CLIENT_NAME}/Hyperframes/Output"
 
 log "Subiendo vídeo final a Google Drive..."
 rclone copy "$FINAL_VIDEO" "$GDRIVE_OUTPUT/" \

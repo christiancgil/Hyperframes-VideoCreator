@@ -9,8 +9,8 @@ FFPROBE=/usr/bin/ffprobe
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$BASE/projects/$PROJECT/pipeline.log"; }
 
-GDRIVE_VIDEO="hf:${CLIENT_NAME}/Input Video"
-GDRIVE_AUDIO="hf:${CLIENT_NAME}/Input Audio"
+GDRIVE_VIDEO="hf:${CLIENT_NAME}/Hyperframes/Input Video"
+GDRIVE_AUDIO="hf:${CLIENT_NAME}/Hyperframes/Input Audio"
 
 mkdir -p "$BASE/input" "$BASE/projects/$PROJECT"
 rm -f "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov \
