@@ -12,14 +12,17 @@ const envContent = fs.readFileSync(path.join(BASE, '.env'), 'utf8');
 const API_KEY = envContent.split('\n').find(l => l.startsWith('OPENAI_API_KEY='))?.split('=')[1]?.trim();
 if (!API_KEY) { console.error('No OPENAI_API_KEY en .env'); process.exit(1); }
 
-const VIDEO_PATH  = path.join(BASE, 'output', 'merged.mp4');
+const VIDEO_PATH  = process.env.WHISPER_FILE || path.join(BASE, 'output', 'merged.mp4');
 const OUTPUT_PATH = path.join(BASE, 'output', 'transcript.json');
 
 const boundary   = '----FormBoundary' + Math.random().toString(36).slice(2);
 const fileBuffer = fs.readFileSync(VIDEO_PATH);
 
+const AUDIO_FILENAME = path.basename(VIDEO_PATH);
+const AUDIO_MIME = VIDEO_PATH.endsWith('.mp3') ? 'audio/mpeg' : 'audio/mp4';
+
 const body = Buffer.concat([
-  Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="merged.mp4"\r\nContent-Type: video/mp4\r\n\r\n`),
+  Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${AUDIO_FILENAME}"\r\nContent-Type: ${AUDIO_MIME}\r\n\r\n`),
   fileBuffer,
   Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`),
   Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n`),

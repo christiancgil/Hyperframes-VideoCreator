@@ -2,136 +2,160 @@
   "name": "HyperFrames - Pipeline Principal",
   "nodes": [
     {
-      "id": "1",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [0, 300],
       "parameters": {
         "httpMethod": "POST",
         "path": "hyperframes-pipeline",
-        "responseMode": "onReceived",
-        "responseData": "firstEntryJson",
         "options": {}
       },
+      "id": "e54e398a-11e5-4459-9011-550b829eee74",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        9600,
+        1504
+      ],
+      "webhookId": "f9b64ddf-eedc-45ef-980e-1425bfe39165",
       "notes": "Recibe: { client_name, project, style? }\nEjemplo: { \"client_name\": \"DM Seguros\", \"project\": \"dm-2024-01\" }"
     },
     {
-      "id": "2",
-      "name": "HTTP - Init",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [220, 300],
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/init",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $json.body.project, client_name: $json.body.client_name, style: $json.body.style || '' }) }}",
-        "options": { "timeout": 30000 }
-      }
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ee546d7e-ddd6-4a7e-bc08-450cb93e264b",
+      "name": "HTTP - Init",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9824,
+        1504
+      ]
     },
     {
-      "id": "3",
-      "name": "Telegram - Inicio",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [440, 300],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
         "chatId": "5126250705",
         "text": "={{ '🎬 Pipeline iniciado\\n📁 Proyecto: ' + $('Webhook').item.json.body.project + '\\n👤 Cliente: ' + $('Webhook').item.json.body.client_name + '\\n\\nDescargando vídeo desde Drive...' }}",
         "additionalFields": {}
       },
+      "id": "44144295-44aa-4aca-bbbd-bcdce50162a2",
+      "name": "Telegram - Inicio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        10048,
+        1504
+      ],
+      "webhookId": "2edfe939-1293-47c2-b2f6-110e1d134434",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "4",
-      "name": "HTTP - Download",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [660, 300],
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/download",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project, client_name: $('Webhook').item.json.body.client_name }) }}",
-        "options": { "timeout": 300000 }
-      }
-    },
-    {
-      "id": "5",
-      "name": "HTTP - Transcribe",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "fcae7445-e983-49b2-96cb-924fefd41aa0",
+      "name": "HTTP - Download",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 300],
+      "position": [
+        10272,
+        1504
+      ]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/transcribe",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": { "timeout": 600000 }
-      }
-    },
-    {
-      "id": "6",
-      "name": "HTTP - Cut",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "f0bc808a-0b99-4e1f-b94f-5a2a0016dd04",
+      "name": "HTTP - Transcribe",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 300],
+      "position": [
+        10480,
+        1504
+      ]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/cut",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": { "timeout": 300000 }
-      }
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "d76389dd-54bf-4253-bc84-830c58345049",
+      "name": "HTTP - Cut",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        10704,
+        1504
+      ]
     },
     {
-      "id": "7",
-      "name": "Telegram - Planificando",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [1320, 300],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
         "chatId": "5126250705",
         "text": "={{ '✂️ Descarga, transcripción y corte listos.\\n🤖 Planificando motion graphics con IA...' }}",
         "additionalFields": {}
       },
+      "id": "44687be1-729b-428e-b3d8-8d3eac5a83dc",
+      "name": "Telegram - Planificando",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        10928,
+        1504
+      ],
+      "webhookId": "0841a6f4-43c7-42d7-8298-d76543cedb04",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "8",
+      "parameters": {
+        "jsCode": "const init = $('HTTP - Init').item.json;\nconst dl   = $('HTTP - Download').item.json;\nconst tr   = $('HTTP - Transcribe').item.json;\nconst wb   = $('Webhook').item.json;\n\nconst systemPrompt = `Eres un editor de vídeo con IA especializado en motion graphics para redes sociales.\n\nTu tarea: planificar los beats de motion graphics para el vídeo y generar el HTML completo de cada uno.\n\nREGLAS ABSOLUTAS DE HTML:\n- body { background: transparent !important; width: ${dl.video_w}px; height: ${dl.video_h}px; margin: 0; padding: 0; overflow: hidden; }\n- Nunca fondo sólido en el body. Nunca background: #000 ni similar.\n- Fuentes desde Google Fonts (incluir el <link> en el <head>)\n- animation-fill-mode: forwards en todas las animaciones\n- Sin hardcodear resoluciones — usar siempre ${dl.video_w}px y ${dl.video_h}px\n\nESTILO DEL CLIENTE:\n${init.styles?.client_style || ''}\n\nFILOSOFÍA DE MOVIMIENTO:\n${init.styles?.motion_philosophy || ''}\n\nTRIGGERS (cuándo activar cada animación):\n${init.styles?.triggers || ''}\n\nCATÁLOGO DE EFECTOS DISPONIBLES:\n${init.styles?.effects_catalog || ''}\n\nREGLAS POR ASPECT RATIO:\n${init.styles?.aspect_ratios || ''}\n\nResponde ÚNICAMENTE con JSON válido, sin markdown, con este formato exacto:\n{\"beats\":[{\"id\":\"beat_01\",\"type\":\"titulo-impacto\",\"start\":2.5,\"duration\":4.0,\"position\":\"CARD_CENTER\",\"html_content\":\"<!DOCTYPE html>...\"}]}`;\n\nconst userMessage = `Vídeo: ${dl.video_w}×${dl.video_h} @ ${dl.fps}fps — Duración total: ${dl.duration}s\n\nTRANSCRIPCIÓN COMPLETA:\n${tr.text || ''}\n\nPALABRAS CON TIMESTAMPS (JSON):\n${JSON.stringify((tr.words || []).slice(0, 300))}\n${dl.script ? '\\nGUION Y ESCENAS (voice over):\\n' + JSON.stringify(dl.script, null, 2) : ''}\n\nPlanifica todos los beats y genera el HTML completo de cada uno siguiendo el estilo del cliente.`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    project: wb.body?.project,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps\n  }\n}];"
+      },
+      "id": "c13be8c6-8ffd-4735-9e61-40c559a0e92c",
       "name": "Code - Preparar Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 300],
-      "parameters": {
-        "jsCode": "const init = $('HTTP - Init').item.json;\nconst dl   = $('HTTP - Download').item.json;\nconst tr   = $('HTTP - Transcribe').item.json;\nconst wb   = $('Webhook').item.json;\n\nconst systemPrompt = `Eres un editor de vídeo con IA especializado en motion graphics para redes sociales.\n\nTu tarea: planificar los beats de motion graphics para el vídeo y generar el HTML completo de cada uno.\n\nREGLAS ABSOLUTAS DE HTML:\n- body { background: transparent !important; width: ${dl.video_w}px; height: ${dl.video_h}px; margin: 0; padding: 0; overflow: hidden; }\n- Nunca fondo sólido en el body. Nunca background: #000 ni similar.\n- Fuentes desde Google Fonts (incluir el <link> en el <head>)\n- animation-fill-mode: forwards en todas las animaciones\n- Sin hardcodear resoluciones — usar siempre ${dl.video_w}px y ${dl.video_h}px\n\nESTILO DEL CLIENTE:\n${init.styles?.client_style || ''}\n\nFILOSOFÍA DE MOVIMIENTO:\n${init.styles?.motion_philosophy || ''}\n\nTRIGGERS (cuándo activar cada animación):\n${init.styles?.triggers || ''}\n\nCATÁLOGO DE EFECTOS DISPONIBLES:\n${init.styles?.effects_catalog || ''}\n\nREGLAS POR ASPECT RATIO:\n${init.styles?.aspect_ratios || ''}\n\nResponde ÚNICAMENTE con JSON válido, sin markdown, con este formato exacto:\n{\"beats\":[{\"id\":\"beat_01\",\"type\":\"titulo-impacto\",\"start\":2.5,\"duration\":4.0,\"position\":\"CARD_CENTER\",\"html_content\":\"<!DOCTYPE html>...\"}]}`;\n\nconst userMessage = `Vídeo: ${dl.video_w}×${dl.video_h} @ ${dl.fps}fps — Duración total: ${dl.duration}s\n\nTRANSCRIPCIÓN COMPLETA:\n${tr.text || ''}\n\nPALABRAS CON TIMESTAMPS (JSON):\n${JSON.stringify((tr.words || []).slice(0, 300))}\n${dl.script ? '\\nGUION Y ESCENAS (voice over):\\n' + JSON.stringify(dl.script, null, 2) : ''}\n\nPlanifica todos los beats y genera el HTML completo de cada uno siguiendo el estilo del cliente.`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    project: wb.body?.project,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps\n  }\n}];"
-      }
+      "position": [
+        11152,
+        1504
+      ]
     },
     {
-      "id": "9",
-      "name": "HTTP - OpenAI Beats",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1760, 300],
       "parameters": {
         "method": "POST",
         "url": "https://api.openai.com/v1/chat/completions",
@@ -140,83 +164,102 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o', response_format: { type: 'json_object' }, max_tokens: 16000, temperature: 0.7, messages: [{ role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_message }] }) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
+      "id": "3fe48c94-1817-497f-9a2b-835c9d332444",
+      "name": "HTTP - OpenAI Beats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        11360,
+        1504
+      ],
       "credentials": {
         "openAiApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "OpenAI account"
+          "id": "jxlWk54uGLrXnR7X",
+          "name": "OpenAI account 3"
         }
       }
     },
     {
-      "id": "10",
+      "parameters": {
+        "jsCode": "// Extraer contenido de la respuesta de OpenAI\nlet content = $json.choices?.[0]?.message?.content || $json.message?.content || '';\n\n// Limpiar markdown si viene envuelto\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(content);\n} catch(e) {\n  // Intentar extraer el JSON del texto\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); }\n    catch(e2) { throw new Error('OpenAI no devolvió JSON válido: ' + content.slice(0, 300)); }\n  } else {\n    throw new Error('No se encontró JSON en la respuesta: ' + content.slice(0, 300));\n  }\n}\n\nconst dl = $('HTTP - Download').item.json;\nconst wb = $('Webhook').item.json;\n\nif (!parsed.beats || !Array.isArray(parsed.beats) || parsed.beats.length === 0) {\n  throw new Error('OpenAI no generó beats. Respuesta: ' + content.slice(0, 200));\n}\n\nreturn [{\n  json: {\n    beats: parsed.beats,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps,\n    project: wb.body?.project\n  }\n}];"
+      },
+      "id": "cedaa1fa-3efb-4171-9cca-5a5af03c1402",
       "name": "Code - Parsear Beats",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 300],
-      "parameters": {
-        "jsCode": "// Extraer contenido de la respuesta de OpenAI\nlet content = $json.choices?.[0]?.message?.content || $json.message?.content || '';\n\n// Limpiar markdown si viene envuelto\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(content);\n} catch(e) {\n  // Intentar extraer el JSON del texto\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); }\n    catch(e2) { throw new Error('OpenAI no devolvió JSON válido: ' + content.slice(0, 300)); }\n  } else {\n    throw new Error('No se encontró JSON en la respuesta: ' + content.slice(0, 300));\n  }\n}\n\nconst dl = $('HTTP - Download').item.json;\nconst wb = $('Webhook').item.json;\n\nif (!parsed.beats || !Array.isArray(parsed.beats) || parsed.beats.length === 0) {\n  throw new Error('OpenAI no generó beats. Respuesta: ' + content.slice(0, 200));\n}\n\nreturn [{\n  json: {\n    beats: parsed.beats,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps,\n    project: wb.body?.project\n  }\n}];"
-      }
+      "position": [
+        11584,
+        1504
+      ]
     },
     {
-      "id": "11",
-      "name": "HTTP - HTML",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2200, 300],
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/html",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $json.project, beats: $json.beats, video_w: $json.video_w, video_h: $json.video_h, fps: $json.fps }) }}",
-        "options": { "timeout": 120000 }
-      }
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "de51bd80-d9bd-4e4c-98c1-803d68c0925d",
+      "name": "HTTP - HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        11808,
+        1504
+      ]
     },
     {
-      "id": "12",
-      "name": "Telegram - Renderizando",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [2420, 300],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
         "chatId": "5126250705",
         "text": "={{ '🎨 ' + $('Code - Parsear Beats').item.json.beats.length + ' animaciones generadas. Renderizando con Puppeteer...\\n⏳ Esto puede tardar varios minutos.' }}",
         "additionalFields": {}
       },
+      "id": "59e4f10d-8c55-4813-9768-3f5ef62bf19c",
+      "name": "Telegram - Renderizando",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12032,
+        1504
+      ],
+      "webhookId": "ddffca75-e34c-4580-8862-cb4c9687e2f2",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "13",
-      "name": "HTTP - Render",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2640, 300],
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/render",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": { "timeout": 600000 }
-      }
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "75250405-87da-439a-bd16-afd8054e844f",
+      "name": "HTTP - Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12240,
+        1504
+      ]
     },
     {
-      "id": "14",
-      "name": "Telegram - Preview 1",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [2860, 300],
       "parameters": {
-        "resource": "message",
         "operation": "sendPhoto",
         "chatId": "5126250705",
         "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/1' }}",
@@ -224,21 +267,24 @@
           "caption": "Frame 1 — segundo 0:01"
         }
       },
+      "id": "ed662381-f8f5-444e-888c-0109d0b070ed",
+      "name": "Telegram - Preview 1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12464,
+        1504
+      ],
+      "webhookId": "abe88cad-73ed-4d0c-a513-266f3f0b7e1d",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "15",
-      "name": "Telegram - Preview 2",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [3080, 300],
       "parameters": {
-        "resource": "message",
         "operation": "sendPhoto",
         "chatId": "5126250705",
         "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/2' }}",
@@ -246,21 +292,24 @@
           "caption": "Frame 2 — segundo 0:05"
         }
       },
+      "id": "4afe8f31-b4cd-4777-b3d4-d187f0bd9361",
+      "name": "Telegram - Preview 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12688,
+        1504
+      ],
+      "webhookId": "b2c259ed-c9a5-4285-bca8-ad12934ab0c8",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "16",
-      "name": "Telegram - Preview 3",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [3300, 300],
       "parameters": {
-        "resource": "message",
         "operation": "sendPhoto",
         "chatId": "5126250705",
         "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/3' }}",
@@ -268,63 +317,243 @@
           "caption": "Frame 3 — segundo 0:10"
         }
       },
+      "id": "6341acd9-8ec5-4537-bdd7-8a44de00467f",
+      "name": "Telegram - Preview 3",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12912,
+        1504
+      ],
+      "webhookId": "963917bf-4c08-4975-b370-3675e034fa32",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "17",
-      "name": "Telegram - Pedir Feedback",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [3520, 300],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
         "chatId": "5126250705",
         "text": "={{ '✅ Render completo — Proyecto: <b>' + $('Webhook').item.json.body.project + '</b>\\n\\nResponde <b>OK</b> para subir a Drive, o describe los cambios que quieres.' }}",
         "additionalFields": {
           "parse_mode": "HTML"
         }
       },
+      "id": "45ee2d16-3df5-46b8-8917-ee556d385eda",
+      "name": "Telegram - Pedir Feedback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13120,
+        1504
+      ],
+      "webhookId": "5180a3a7-f9a6-4507-85be-5198ed88fe85",
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     }
   ],
+  "pinData": {},
   "connections": {
-    "Webhook":                { "main": [[{ "node": "HTTP - Init",            "type": "main", "index": 0 }]] },
-    "HTTP - Init":            { "main": [[{ "node": "Telegram - Inicio",      "type": "main", "index": 0 }]] },
-    "Telegram - Inicio":      { "main": [[{ "node": "HTTP - Download",        "type": "main", "index": 0 }]] },
-    "HTTP - Download":        { "main": [[{ "node": "HTTP - Transcribe",      "type": "main", "index": 0 }]] },
-    "HTTP - Transcribe":      { "main": [[{ "node": "HTTP - Cut",             "type": "main", "index": 0 }]] },
-    "HTTP - Cut":             { "main": [[{ "node": "Telegram - Planificando","type": "main", "index": 0 }]] },
-    "Telegram - Planificando":{ "main": [[{ "node": "Code - Preparar Prompt", "type": "main", "index": 0 }]] },
-    "Code - Preparar Prompt": { "main": [[{ "node": "HTTP - OpenAI Beats",    "type": "main", "index": 0 }]] },
-    "HTTP - OpenAI Beats":    { "main": [[{ "node": "Code - Parsear Beats",   "type": "main", "index": 0 }]] },
-    "Code - Parsear Beats":   { "main": [[{ "node": "HTTP - HTML",            "type": "main", "index": 0 }]] },
-    "HTTP - HTML":            { "main": [[{ "node": "Telegram - Renderizando","type": "main", "index": 0 }]] },
-    "Telegram - Renderizando":{ "main": [[{ "node": "HTTP - Render",          "type": "main", "index": 0 }]] },
-    "HTTP - Render":          { "main": [[{ "node": "Telegram - Preview 1",   "type": "main", "index": 0 }]] },
-    "Telegram - Preview 1":   { "main": [[{ "node": "Telegram - Preview 2",   "type": "main", "index": 0 }]] },
-    "Telegram - Preview 2":   { "main": [[{ "node": "Telegram - Preview 3",   "type": "main", "index": 0 }]] },
-    "Telegram - Preview 3":   { "main": [[{ "node": "Telegram - Pedir Feedback","type": "main", "index": 0 }]] },
-    "Telegram - Pedir Feedback":{ "main": [[]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Init": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Inicio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Inicio": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Download": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Transcribe": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Cut",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Cut": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Planificando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Planificando": {
+      "main": [
+        [
+          {
+            "node": "Code - Preparar Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Preparar Prompt": {
+      "main": [
+        [
+          {
+            "node": "HTTP - OpenAI Beats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - OpenAI Beats": {
+      "main": [
+        [
+          {
+            "node": "Code - Parsear Beats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parsear Beats": {
+      "main": [
+        [
+          {
+            "node": "HTTP - HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - HTML": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Renderizando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Renderizando": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Render": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Preview 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Preview 1": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Preview 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Preview 2": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Preview 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Preview 3": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Pedir Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner",
-    "errorWorkflow": ""
+    "binaryMode": "separate"
   },
+  "versionId": "2e2677e4-53e2-48c7-af6f-cfdd74e33fe9",
   "meta": {
-    "instanceId": "hyperframes"
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ca909d39e8044184bf800b77fc3e957ed8d5a4c580087639692415cc2c770b70"
+  },
+  "id": "dF120hn4ZDbtLyIB",
+  "tags": [
+    {
+      "name": "Hyperframes",
+      "id": "V91bcZv3TK25LMBB",
+      "updatedAt": "2026-09-15T03:17:22.956Z",
+      "createdAt": "2026-09-15T03:17:22.956Z"
+    }
+  ]
 }
