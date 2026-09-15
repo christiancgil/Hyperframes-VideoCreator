@@ -1,0 +1,323 @@
+{
+  "name": "HyperFrames - Respuesta Telegram",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      },
+      "notes": "Escucha mensajes del bot. Filtra por chat_id para ignorar mensajes de otros."
+    },
+    {
+      "id": "2",
+      "name": "IF - Es Mi Chat",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message.chat.id.toString() }}",
+              "rightValue": "5126250705",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "IF - Es OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message.text.trim() }}",
+              "rightValue": "ok|okay|sí|si|listo|perfecto|publicar|subir|dale|enviar|upload",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "HTTP - Obtener Proyecto (OK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 160],
+      "parameters": {
+        "method": "GET",
+        "url": "http://187.124.238.94:4000/active",
+        "options": { "timeout": 10000 }
+      }
+    },
+    {
+      "id": "5",
+      "name": "HTTP - Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/upload",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project: $json.project, client_name: $json.client_name }) }}",
+        "options": { "timeout": 120000 }
+      }
+    },
+    {
+      "id": "6",
+      "name": "Telegram - Video Listo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 160],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ '✅ <b>¡Vídeo listo!</b>\\n\\n📁 Proyecto: ' + $('HTTP - Obtener Proyecto (OK)').item.json.project + '\\n☁️ Subido a Google Drive — carpeta Output del cliente.\\n\\nPuedes iniciar un nuevo proyecto cuando quieras.' }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "7",
+      "name": "HTTP - Obtener Proyecto (Corrección)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 440],
+      "parameters": {
+        "method": "GET",
+        "url": "http://187.124.238.94:4000/active",
+        "options": { "timeout": 10000 }
+      }
+    },
+    {
+      "id": "8",
+      "name": "Code - Preparar Corrección",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 440],
+      "parameters": {
+        "jsCode": "const status = $('HTTP - Obtener Proyecto (Corrección)').item.json;\nconst correctionText = $('Telegram Trigger').item.json.message.text;\n\n// Leer el beats.json actual del proyecto para pasarlo a OpenAI\n// Como no tenemos acceso directo al FS desde N8N, enviamos la nota de corrección\n// y el proyecto al endpoint /correct — OpenAI en ese endpoint re-generará\n\nconst systemPrompt = `Eres un editor de vídeo con IA. El cliente ha pedido cambios en las animaciones del vídeo.\\n\\nTu tarea: ajustar los beats de motion graphics según el feedback del cliente y re-generar el HTML de cada beat modificado.\\n\\nREGLAS HTML ABSOLUTAS:\\n- body { background: transparent !important; width: ${status.video_w}px; height: ${status.video_h}px; margin: 0; padding: 0; overflow: hidden; }\\n- Nunca fondo sólido en el body\\n- Fuentes desde Google Fonts\\n- animation-fill-mode: forwards\\n\\nDevuelve ÚNICAMENTE JSON válido con este formato:\\n{\"beats\":[{\"id\":\"beat_01\",\"type\":\"titulo-impacto\",\"start\":2.5,\"duration\":4.0,\"position\":\"CARD_CENTER\",\"html_content\":\"<!DOCTYPE html>...\"}]}`;\n\nconst userMessage = `El cliente dice: \"${correctionText}\"\\n\\nProyecto: ${status.project}\\nVídeo: ${status.video_w}×${status.video_h} @ ${status.fps}fps\\n\\nAjusta todos los beats necesarios y devuelve la lista completa actualizada.`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    project: status.project,\n    client_name: status.client_name || '',\n    video_w: status.video_w,\n    video_h: status.video_h,\n    fps: status.fps,\n    correction_note: correctionText\n  }\n}];"
+      }
+    },
+    {
+      "id": "9",
+      "name": "HTTP - OpenAI Corrección",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o', response_format: { type: 'json_object' }, max_tokens: 16000, temperature: 0.7, messages: [{ role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_message }] }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "id": "10",
+      "name": "Code - Parsear Corrección",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 440],
+      "parameters": {
+        "jsCode": "let content = $json.choices?.[0]?.message?.content || $json.message?.content || '';\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(content);\n} catch(e) {\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) parsed = JSON.parse(match[0]);\n  else throw new Error('OpenAI no devolvió JSON válido: ' + content.slice(0, 300));\n}\n\nconst prep = $('Code - Preparar Corrección').item.json;\n\nreturn [{\n  json: {\n    beats: parsed.beats || [],\n    project: prep.project,\n    client_name: prep.client_name,\n    video_w: prep.video_w,\n    video_h: prep.video_h,\n    fps: prep.fps,\n    correction_note: prep.correction_note\n  }\n}];"
+      }
+    },
+    {
+      "id": "11",
+      "name": "Telegram - Corrigiendo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1540, 440],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ '🔄 Aplicando correcciones y re-renderizando...\\n⏳ Espera unos minutos.' }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "12",
+      "name": "HTTP - Correct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/correct",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project: $json.project, beats: $json.beats, video_w: $json.video_w, video_h: $json.video_h, fps: $json.fps, correction_note: $json.correction_note }) }}",
+        "options": { "timeout": 600000 }
+      }
+    },
+    {
+      "id": "13",
+      "name": "Telegram - Preview Corregido 1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1980, 440],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendPhoto",
+        "chatId": "5126250705",
+        "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Code - Parsear Corrección').item.json.project + '/1' }}",
+        "additionalFields": {
+          "caption": "Frame 1 — versión corregida"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "14",
+      "name": "Telegram - Preview Corregido 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2200, 440],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendPhoto",
+        "chatId": "5126250705",
+        "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Code - Parsear Corrección').item.json.project + '/2' }}",
+        "additionalFields": {
+          "caption": "Frame 2 — versión corregida"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "15",
+      "name": "Telegram - Pedir Feedback Corrección",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2420, 440],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ '🎬 Nueva versión lista.\\n\\nResponde <b>OK</b> para subir a Drive, o describe más cambios.' }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "IF - Es Mi Chat", "type": "main", "index": 0 }]]
+    },
+    "IF - Es Mi Chat": {
+      "main": [
+        [{ "node": "IF - Es OK", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "IF - Es OK": {
+      "main": [
+        [{ "node": "HTTP - Obtener Proyecto (OK)", "type": "main", "index": 0 }],
+        [{ "node": "HTTP - Obtener Proyecto (Corrección)", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - Obtener Proyecto (OK)": {
+      "main": [[{ "node": "HTTP - Upload", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Upload": {
+      "main": [[{ "node": "Telegram - Video Listo", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Obtener Proyecto (Corrección)": {
+      "main": [[{ "node": "Code - Preparar Corrección", "type": "main", "index": 0 }]]
+    },
+    "Code - Preparar Corrección": {
+      "main": [[{ "node": "HTTP - OpenAI Corrección", "type": "main", "index": 0 }]]
+    },
+    "HTTP - OpenAI Corrección": {
+      "main": [[{ "node": "Code - Parsear Corrección", "type": "main", "index": 0 }]]
+    },
+    "Code - Parsear Corrección": {
+      "main": [[{ "node": "Telegram - Corrigiendo", "type": "main", "index": 0 }]]
+    },
+    "Telegram - Corrigiendo": {
+      "main": [[{ "node": "HTTP - Correct", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Correct": {
+      "main": [[{ "node": "Telegram - Preview Corregido 1", "type": "main", "index": 0 }]]
+    },
+    "Telegram - Preview Corregido 1": {
+      "main": [[{ "node": "Telegram - Preview Corregido 2", "type": "main", "index": 0 }]]
+    },
+    "Telegram - Preview Corregido 2": {
+      "main": [[{ "node": "Telegram - Pedir Feedback Corrección", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "instanceId": "hyperframes"
+  }
+}

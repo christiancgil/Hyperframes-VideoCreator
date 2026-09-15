@@ -59,6 +59,10 @@ function setStatus(project, data) {
     `${BASE}/projects/${project}/status.json`,
     JSON.stringify({ ...current, ...data, updated_at: new Date().toISOString() }, null, 2)
   );
+  // Registrar proyecto activo para que el handler de Telegram sepa qué corregir
+  if (data.status === 'rendered' || data.status === 'done') {
+    fs.writeFileSync(`${BASE}/projects/.active`, project, 'utf8');
+  }
 }
 
 function runSync(script, args, project, timeoutMs = 600000) {
@@ -110,6 +114,26 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && parts[0] === 'status' && parts[1]) {
       const s = getStatus(parts[1]);
       return s ? json(res, 200, s) : json(res, 404, { error: 'Proyecto no encontrado' });
+    }
+
+    // ── GET /active ──────────────────────────────────────────────────────────
+    // Devuelve el proyecto activo (usado por el handler de Telegram)
+    if (req.method === 'GET' && parts[0] === 'active') {
+      const activeFile = `${BASE}/projects/.active`;
+      if (!fs.existsSync(activeFile)) return json(res, 404, { error: 'No hay proyecto activo' });
+      const project = fs.readFileSync(activeFile, 'utf8').trim();
+      const s = getStatus(project);
+      return s ? json(res, 200, { project, ...s }) : json(res, 404, { error: 'Proyecto no encontrado' });
+    }
+
+    // ── GET /preview/:project/:n ─────────────────────────────────────────────
+    // Sirve frames de preview como imagen (para que Telegram los muestre desde URL)
+    if (req.method === 'GET' && parts[0] === 'preview' && parts[1] && parts[2]) {
+      const previewFile = `${BASE}/projects/${parts[1]}/preview_${parts[2]}.png`;
+      if (!fs.existsSync(previewFile)) return json(res, 404, { error: 'Preview no encontrado' });
+      const img = fs.readFileSync(previewFile);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': img.length });
+      return res.end(img);
     }
 
     // ── GET /log/:project ────────────────────────────────────────────────────
