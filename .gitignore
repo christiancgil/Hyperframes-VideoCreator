@@ -1,0 +1,43 @@
+# API keys
+.env
+
+# Vídeos (demasiado pesados para git)
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+!output/compositions
+output/compositions/*
+!output/compositions/.gitkeep
+
+# Skills clonadas (se instalan via setup.sh)
+skills/video-use/
+skills/hyperframes/
+
+# Node / Python
+node_modules/
+__pycache__/
+*.pyc
+.python-version
+
+# macOS
+.DS_Store
+
+# Proyectos de clientes (privados)
+projects/
+
+# Claude Code local config
+.claude/
+
+# Logos y assets de marca (privados)
+brand/
+
+# Backups y notas de sesión
+.demo_backup/
+errores-sesion.md
+
+# Videos y frames intermedios
+*.mov
+*.MP4
+*.mp4
+frames/
