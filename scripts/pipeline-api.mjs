@@ -48,10 +48,10 @@ const server = http.createServer(async (req, res) => {
   try {
     // POST /start — inicia pipeline completo
     if (req.method === 'POST' && url.pathname === '/start') {
-      const { gdrive_path, project, callback_url, style } = await parseBody(req);
-      if (!gdrive_path || !project) {
+      const { client_name, project, callback_url, style } = await parseBody(req);
+      if (!client_name || !project) {
         res.writeHead(400);
-        return res.end(JSON.stringify({ error: 'gdrive_path y project son obligatorios' }));
+        return res.end(JSON.stringify({ error: 'client_name y project son obligatorios' }));
       }
 
       const existing = getStatus(project);
@@ -60,10 +60,10 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Pipeline ya en ejecución para este proyecto' }));
       }
 
-      setStatus(project, { status: 'queued', gdrive_path, callback_url, style: style || 'default' });
+      setStatus(project, { status: 'queued', client_name, callback_url, style: style || 'default' });
       runBackground(
         `${BASE}/scripts/run-pipeline.sh`,
-        [gdrive_path, project, callback_url || '', style || 'default'],
+        [client_name, project, callback_url || '', style || 'default'],
         project
       );
 

@@ -2,10 +2,15 @@
 # Pipeline principal: Download → Transcribe → Beats → Render → Upload → Notify
 set -euo pipefail
 
-GDRIVE_PATH="$1"
-PROJECT="$2"
+CLIENT_NAME="$1"   # ej: "Dairo Miranda"
+PROJECT="$2"       # ej: "dairo_ep01" (sin espacios)
 CALLBACK_URL="${3:-}"
 STYLE="${4:-default}"
+
+# Paths Drive basados en estructura estándar hf:{ClientName}/...
+GDRIVE_VIDEO="hf:${CLIENT_NAME}/Input Video"
+GDRIVE_AUDIO="hf:${CLIENT_NAME}/Input Audio"
+GDRIVE_OUTPUT="hf:${CLIENT_NAME}/Output"
 
 BASE=/opt/hyperframes
 FFMPEG=/usr/bin/ffmpeg
@@ -37,15 +42,55 @@ status "{status:'running', phase:'download'}"
 log "=== PIPELINE INICIO: $PROJECT ==="
 
 # ── FASE 0: Descargar desde Google Drive ─────────────────────────────────────
-log "Descargando desde Drive: $GDRIVE_PATH"
-rm -f "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null || true
-rclone copy "$GDRIVE_PATH" "$BASE/input/" \
+log "Descargando vídeos desde Drive: $GDRIVE_VIDEO"
+rm -f "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov \
+      "$BASE/input"/*.mp3 "$BASE/input"/*.wav "$BASE/input"/*.m4a 2>/dev/null || true
+
+rclone copy "$GDRIVE_VIDEO" "$BASE/input/" \
   --include "*.mp4" --include "*.MP4" --include "*.mov" -v \
   2>>"$BASE/projects/$PROJECT/pipeline.log"
 
-VIDEO=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | head -1 || true)
-[ -z "$VIDEO" ] && fail "No se encontró vídeo en $GDRIVE_PATH"
-log "Vídeo: $VIDEO"
+# Contar clips de vídeo
+CLIP_COUNT=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | wc -l || echo 0)
+[ "$CLIP_COUNT" -eq 0 ] && fail "No se encontraron vídeos en $GDRIVE_VIDEO"
+log "Clips encontrados: $CLIP_COUNT"
+
+# Descargar audio separado si existe (Input Audio)
+AUDIO_COUNT=$(rclone ls "$GDRIVE_AUDIO" 2>/dev/null | wc -l || echo 0)
+HAS_SEPARATE_AUDIO=false
+if [ "$AUDIO_COUNT" -gt 0 ]; then
+  log "Audio separado detectado — descargando desde $GDRIVE_AUDIO"
+  rclone copy "$GDRIVE_AUDIO" "$BASE/input/" \
+    --include "*.mp3" --include "*.wav" --include "*.m4a" --include "*.aac" -v \
+    2>>"$BASE/projects/$PROJECT/pipeline.log"
+  HAS_SEPARATE_AUDIO=true
+fi
+
+# Si hay múltiples clips, unirlos (Fase 0 del pipeline)
+if [ "$CLIP_COUNT" -gt 1 ]; then
+  log "Múltiples clips — uniendo en video_completo.mp4..."
+  CLIPS=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | sort)
+  for clip in $CLIPS; do echo "file '$clip'"; done > "$BASE/input/concat_list.txt"
+  $FFMPEG -f concat -safe 0 -i "$BASE/input/concat_list.txt" \
+    -c:v copy -c:a aac -b:a 192k "$BASE/input/video_completo.mp4" -y \
+    2>>"$BASE/projects/$PROJECT/pipeline.log"
+  VIDEO="$BASE/input/video_completo.mp4"
+else
+  VIDEO=$(ls "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov 2>/dev/null | head -1)
+fi
+
+# Si hay audio separado, mezclarlo con el vídeo
+if [ "$HAS_SEPARATE_AUDIO" = true ]; then
+  AUDIO_FILE=$(ls "$BASE/input"/*.mp3 "$BASE/input"/*.wav "$BASE/input"/*.m4a "$BASE/input"/*.aac 2>/dev/null | head -1)
+  log "Mezclando audio separado: $AUDIO_FILE"
+  $FFMPEG -i "$VIDEO" -i "$AUDIO_FILE" \
+    -c:v copy -c:a aac -b:a 192k -map 0:v:0 -map 1:a:0 \
+    "$BASE/input/video_con_audio.mp4" -y \
+    2>>"$BASE/projects/$PROJECT/pipeline.log"
+  VIDEO="$BASE/input/video_con_audio.mp4"
+fi
+
+log "Vídeo listo: $VIDEO"
 
 # ── FASE 1: Detectar resolución y transcribir ────────────────────────────────
 VIDEO_W=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=width   -of csv=p=0 "$VIDEO")
@@ -363,7 +408,6 @@ log "Duración final: ${DURATION_FINAL}s"
 
 # ── FASE 6.5: Subir resultado a Google Drive ──────────────────────────────────
 log "Subiendo resultado a Drive..."
-GDRIVE_OUTPUT=$(echo "$GDRIVE_PATH" | sed 's|/[^/]*$|/output|')
 rclone copy "$FINAL_VIDEO" "$GDRIVE_OUTPUT/" -v 2>>"$BASE/projects/$PROJECT/pipeline.log" || true
 DRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT}/${PROJECT}_final.mp4"
 log "Subido a: $DRIVE_OUTPUT_PATH"
