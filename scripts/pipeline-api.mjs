@@ -1,10 +1,51 @@
 import http from 'http';
+import https from 'https';
 import { execSync, spawn } from 'child_process';
 import fs from 'fs';
 
 const PORT = 4000;
 const BASE = '/opt/hyperframes';
 
+// ── Cargar .env ──────────────────────────────────────────────────────────────
+const envPath = `${BASE}/.env`;
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([^#=]+?)\s*=\s*(.*)\s*$/);
+    if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+}
+
+const TELEGRAM_TOKEN   = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID   || '';
+
+// ── Telegram ─────────────────────────────────────────────────────────────────
+function sendTelegram(text) {
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+  const body = JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' });
+  const req = https.request({
+    hostname: 'api.telegram.org',
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+  });
+  req.on('error', () => {}); // silencioso — no queremos que un fallo de Telegram rompa la API
+  req.write(body);
+  req.end();
+}
+
+function notifyError(project, phase, errorMsg) {
+  const short = String(errorMsg).slice(0, 400);
+  const ts = new Date().toLocaleTimeString('es-ES', { timeZone: 'America/Bogota', hour12: false });
+  sendTelegram(
+    `❌ <b>Error en pipeline</b>\n` +
+    `📁 Proyecto: <code>${project}</code>\n` +
+    `🔧 Fase: <b>${phase}</b>\n` +
+    `⏰ Hora: ${ts}\n\n` +
+    `<pre>${short}</pre>`
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function getStatus(project) {
   const f = `${BASE}/projects/${project}/status.json`;
   try { return JSON.parse(fs.readFileSync(f, 'utf8')); }
@@ -32,18 +73,10 @@ function runSync(script, args, project, timeoutMs = 600000) {
     fs.appendFileSync(logFile, output);
     return { ok: true, output };
   } catch (err) {
-    const errMsg = err.stderr || err.message;
+    const errMsg = err.stderr || err.stdout || err.message;
     fs.appendFileSync(logFile, `\nERROR: ${errMsg}\n`);
-    return { ok: false, error: errMsg };
+    return { ok: false, error: String(errMsg) };
   }
-}
-
-function runBackground(script, args, project) {
-  fs.mkdirSync(`${BASE}/projects/${project}`, { recursive: true });
-  const logFile = `${BASE}/projects/${project}/pipeline.log`;
-  const out = fs.openSync(logFile, 'a');
-  const proc = spawn('bash', [script, ...args], { detached: true, stdio: ['ignore', out, out] });
-  proc.unref();
 }
 
 function parseBody(req) {
@@ -60,6 +93,14 @@ function json(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+// Unifica: guarda estado de error + notifica Telegram + responde HTTP 500
+function fail(res, project, phase, errorMsg) {
+  setStatus(project, { status: 'error', phase, error: String(errorMsg).slice(0, 500) });
+  notifyError(project, phase, errorMsg);
+  return json(res, 500, { error: errorMsg });
+}
+
+// ── Servidor ──────────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const parts = url.pathname.split('/').filter(Boolean);
@@ -85,7 +126,6 @@ const server = http.createServer(async (req, res) => {
     if (!project) return json(res, 400, { error: 'project es obligatorio' });
 
     // ── POST /init ───────────────────────────────────────────────────────────
-    // Inicializa el proyecto y devuelve los estilos para que N8N los pase a OpenAI
     if (url.pathname === '/init') {
       const { client_name, style } = body;
       if (!client_name) return json(res, 400, { error: 'client_name es obligatorio' });
@@ -111,21 +151,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /download ───────────────────────────────────────────────────────
-    // Descarga vídeo + audio de Drive, sincroniza audio si aplica
     if (url.pathname === '/download') {
       const { client_name } = body;
       if (!client_name) return json(res, 400, { error: 'client_name es obligatorio' });
 
       setStatus(project, { status: 'downloading', phase: 'download' });
       const result = runSync(`${BASE}/scripts/phase-download.sh`, [client_name, project], project, 300000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'download', result.error);
 
       const info = getStatus(project);
-
-      // Adjuntar script/guion si existe (N8N lo pasará a OpenAI para planificación de beats)
       const scriptPath = `${BASE}/projects/${project}/script.json`;
       const script = fs.existsSync(scriptPath)
         ? JSON.parse(fs.readFileSync(scriptPath, 'utf8'))
@@ -135,17 +169,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /transcribe ─────────────────────────────────────────────────────
-    // Transcribe el vídeo con Whisper, devuelve transcript completo
     if (url.pathname === '/transcribe') {
       setStatus(project, { status: 'transcribing', phase: 'transcribe' });
       const result = runSync(`${BASE}/scripts/phase-transcribe.sh`, [project], project, 600000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'transcribe', result.error);
 
       const transcriptPath = `${BASE}/projects/${project}/transcript.json`;
-      if (!fs.existsSync(transcriptPath)) return json(res, 500, { error: 'Transcript no generado' });
+      if (!fs.existsSync(transcriptPath)) return fail(res, project, 'transcribe', 'Transcript no generado');
 
       const transcript = JSON.parse(fs.readFileSync(transcriptPath, 'utf8'));
       setStatus(project, { status: 'transcribed' });
@@ -159,34 +189,29 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /cut ────────────────────────────────────────────────────────────
-    // Corta silencios y fillers del vídeo
     if (url.pathname === '/cut') {
       setStatus(project, { status: 'cutting', phase: 'cut' });
       const result = runSync(`${BASE}/scripts/phase-cut.sh`, [project], project, 300000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'cut', result.error);
+
       setStatus(project, { status: 'cut_done' });
       return json(res, 200, { ok: true, edited_video: `${BASE}/output/${project}_edited.mp4` });
     }
 
     // ── POST /html ───────────────────────────────────────────────────────────
-    // Recibe beats JSON de N8N/OpenAI y genera los HTMLs de motion graphics
     if (url.pathname === '/html') {
       const { beats, video_w, video_h, fps } = body;
       if (!beats || !Array.isArray(beats)) return json(res, 400, { error: 'beats[] es obligatorio' });
 
       setStatus(project, { status: 'generating_html', phase: 'html' });
 
-      const beatsFile = `${BASE}/projects/${project}/beats.json`;
-      fs.writeFileSync(beatsFile, JSON.stringify({ beats, video_w, video_h, fps }, null, 2));
+      fs.writeFileSync(
+        `${BASE}/projects/${project}/beats.json`,
+        JSON.stringify({ beats, video_w, video_h, fps }, null, 2)
+      );
 
       const result = runSync(`${BASE}/scripts/phase-generate-html.sh`, [project], project, 120000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'html', result.error);
 
       const compDir = `${BASE}/output/compositions/${project}/compositions`;
       const htmlFiles = fs.existsSync(compDir)
@@ -198,16 +223,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /render ─────────────────────────────────────────────────────────
-    // Renderiza beats con Puppeteer + composita el vídeo final
     if (url.pathname === '/render') {
       setStatus(project, { status: 'rendering', phase: 'render' });
       const result = runSync(`${BASE}/scripts/phase-render.sh`, [project], project, 600000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'render', result.error);
 
-      // Devolver frames de preview como base64
       const previews = [1, 2, 3].map(n => {
         const f = `${BASE}/projects/${project}/preview_${n}.png`;
         return fs.existsSync(f) ? fs.readFileSync(f).toString('base64') : null;
@@ -222,17 +242,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /upload ─────────────────────────────────────────────────────────
-    // Sube el vídeo final a la carpeta Output del cliente en Drive
     if (url.pathname === '/upload') {
       const { client_name } = body;
       if (!client_name) return json(res, 400, { error: 'client_name es obligatorio' });
 
       setStatus(project, { status: 'uploading', phase: 'upload' });
       const result = runSync(`${BASE}/scripts/phase-upload.sh`, [client_name, project], project, 120000);
-      if (!result.ok) {
-        setStatus(project, { status: 'error', error: result.error });
-        return json(res, 500, { error: result.error });
-      }
+      if (!result.ok) return fail(res, project, 'upload', result.error);
 
       const driveUrl = `hf:${client_name}/Output/${project}_final.mp4`;
       setStatus(project, { status: 'done', drive_output: driveUrl });
@@ -240,21 +256,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── POST /correct ─────────────────────────────────────────────────────────
-    // Recibe beats corregidos de N8N/OpenAI y re-renderiza
     if (url.pathname === '/correct') {
       const { beats, video_w, video_h, fps, correction_note } = body;
       if (!beats || !Array.isArray(beats)) return json(res, 400, { error: 'beats[] es obligatorio' });
 
       setStatus(project, { status: 'correcting', correction_note });
 
-      const beatsFile = `${BASE}/projects/${project}/beats.json`;
-      fs.writeFileSync(beatsFile, JSON.stringify({ beats, video_w, video_h, fps }, null, 2));
+      fs.writeFileSync(
+        `${BASE}/projects/${project}/beats.json`,
+        JSON.stringify({ beats, video_w, video_h, fps }, null, 2)
+      );
 
       const htmlResult = runSync(`${BASE}/scripts/phase-generate-html.sh`, [project], project, 120000);
-      if (!htmlResult.ok) return json(res, 500, { error: htmlResult.error });
+      if (!htmlResult.ok) return fail(res, project, 'correct/html', htmlResult.error);
 
       const renderResult = runSync(`${BASE}/scripts/phase-render.sh`, [project], project, 600000);
-      if (!renderResult.ok) return json(res, 500, { error: renderResult.error });
+      if (!renderResult.ok) return fail(res, project, 'correct/render', renderResult.error);
 
       const previews = [1, 2, 3].map(n => {
         const f = `${BASE}/projects/${project}/preview_${n}.png`;
@@ -268,10 +285,18 @@ const server = http.createServer(async (req, res) => {
     json(res, 404, { error: 'Endpoint no encontrado' });
 
   } catch (err) {
+    // Error inesperado (excepción no capturada en el handler)
+    const project = req._parsedBody?.project || 'desconocido';
+    const phase = url?.pathname?.replace('/', '') || 'api';
+    notifyError(project, phase, err.message);
     json(res, 500, { error: err.message });
   }
 });
 
+// Guardar body parseado para acceso en el catch global
+server.on('request', (req) => { req._parsedBody = null; });
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Pipeline API v2 corriendo en puerto ${PORT}`);
+  if (!TELEGRAM_TOKEN) console.warn('AVISO: TELEGRAM_BOT_TOKEN no configurado — las notificaciones de error están desactivadas');
 });
