@@ -1,0 +1,17 @@
+[Unit]
+Description=Hyperframes Pipeline API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hyperframes
+ExecStart=/usr/bin/node --experimental-vm-modules /opt/hyperframes/scripts/pipeline-api.mjs
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+StandardOutput=append:/var/log/pipeline-api.log
+StandardError=append:/var/log/pipeline-api.log
+
+[Install]
+WantedBy=multi-user.target
