@@ -92,56 +92,45 @@ EOF
 
 log "Beats renderizados. Compositando vídeo final..."
 
-# Exports must be set BEFORE the heredoc that reads them via process.env
-export BEATS_FILE="$BASE/projects/$PROJECT/beats_with_paths.json"
-export COMP_DIR="$COMP_DIR"
-export FFMPEG="$FFMPEG"
-export EDITED_VIDEO="$EDITED_VIDEO"
-export FINAL_VIDEO="$FINAL_VIDEO"
-
-# Construir filtro de compositing dinámicamente
-node --input-type=module <<'EOF2' > /tmp/composite_cmd_${PROJECT}.sh
+# Compositing: generate ffmpeg command from beats JSON and execute in one Node.js pass.
+# Uses <<EOF (no single-quote) so bash injects the paths via variable substitution.
+node --input-type=module <<EOF 2>>"$BASE/projects/$PROJECT/pipeline.log"
 import fs from 'fs';
-const { beats } = JSON.parse(fs.readFileSync(process.env.BEATS_FILE));
-const compDir = process.env.COMP_DIR;
-const ffmpeg = process.env.FFMPEG;
-const editedVideo = process.env.EDITED_VIDEO;
-const finalVideo = process.env.FINAL_VIDEO;
+import { execSync } from 'child_process';
 
-let inputs = [`-i "${editedVideo}"`];
+const { beats } = JSON.parse(fs.readFileSync('$BEATS_FILE', 'utf8'));
+const compDir = '$COMP_DIR';
+const ffmpeg  = '$FFMPEG';
+const editedVideo = '$EDITED_VIDEO';
+const finalVideo  = '$FINAL_VIDEO';
+
+let inputs     = [\`-i "\${editedVideo}"\`];
 let filterParts = [];
 let lastOut = '0:v';
 let idx = 1;
 
 for (const beat of beats || []) {
-  const mov = `${compDir}/${beat.id}.mov`;
+  const mov = \`\${compDir}/\${beat.id}.mov\`;
   if (!fs.existsSync(mov)) continue;
   const end = beat.start + beat.duration;
-  inputs.push(`-i "${mov}"`);
-  filterParts.push(`[${idx}:v]setpts=PTS+${beat.start}/TB[ov${idx}]`);
-  filterParts.push(`[${lastOut}][ov${idx}]overlay=0:0:enable='between(t,${beat.start},${end})'[v${idx}]`);
-  lastOut = `v${idx}`;
+  inputs.push(\`-i "\${mov}"\`);
+  filterParts.push(\`[\${idx}:v]setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
+  filterParts.push(\`[\${lastOut}][ov\${idx}]overlay=0:0:enable='between(t,\${beat.start},\${end})'[v\${idx}]\`);
+  lastOut = \`v\${idx}\`;
   idx++;
 }
 
 if (filterParts.length === 0) {
-  console.log(`${ffmpeg} -i "${editedVideo}" -c copy "${finalVideo}" -y`);
+  console.log('No beats con .mov — copiando editado como final');
+  fs.copyFileSync(editedVideo, finalVideo);
 } else {
   const filter = filterParts.join(';');
-  console.log(`${ffmpeg} ${inputs.join(' ')} -filter_complex "${filter}" -map "[${lastOut}]" -map 0:a -c:v libx264 -preset slow -crf 18 -c:a copy "${finalVideo}" -y`);
+  const cmd = \`\${ffmpeg} \${inputs.join(' ')} -filter_complex "\${filter}" -map "[\${lastOut}]" -map 0:a -c:v libx264 -preset slow -crf 18 -c:a copy "\${finalVideo}" -y\`;
+  console.log('Compositing cmd:', cmd.slice(0, 120) + '...');
+  execSync(cmd, { stdio: ['pipe', 'inherit', 'inherit'] });
 }
-EOF2
-
-COMPOSITE_CMD=$(node --input-type=module /tmp/composite_cmd_${PROJECT}.sh 2>/dev/null || echo "")
-
-if [ -n "$COMPOSITE_CMD" ]; then
-  log "Ejecutando compositing..."
-  eval "$COMPOSITE_CMD" 2>>"$BASE/projects/$PROJECT/pipeline.log"
-else
-  cp "$EDITED_VIDEO" "$FINAL_VIDEO"
-fi
-
-rm -f /tmp/composite_cmd_${PROJECT}.sh
+console.log('Compositing completo');
+EOF
 
 # Extraer frames de preview
 $FFMPEG -i "$FINAL_VIDEO" \
