@@ -296,7 +296,7 @@
           "name": "Telegram Hyperframes Bot"
         }
       }
-    },
+    }
   ],
   "connections": {
     "Webhook":                { "main": [[{ "node": "HTTP - Init",            "type": "main", "index": 0 }]] },
