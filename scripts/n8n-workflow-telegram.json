@@ -17,7 +17,7 @@
           "name": "Telegram Hyperframes Bot"
         }
       },
-      "notes": "Escucha mensajes del bot. Filtra por chat_id para ignorar mensajes de otros."
+      "notes": "Comandos disponibles:\n/iniciar NombreCliente | nombre-proyecto\n/iniciar NombreCliente  (proyecto auto con fecha)\nOK → sube a Drive\nCualquier otro texto → corrección con IA"
     },
     {
       "id": "2",
@@ -41,7 +41,7 @@
     },
     {
       "id": "3",
-      "name": "IF - Es OK",
+      "name": "IF - Es Comando Iniciar",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [440, 300],
@@ -51,7 +51,7 @@
           "conditions": [
             {
               "leftValue": "={{ $json.message.text.trim() }}",
-              "rightValue": "ok|okay|sí|si|listo|perfecto|publicar|subir|dale|enviar|upload",
+              "rightValue": "^\\/?\\ *iniciar\\b",
               "operator": { "type": "string", "operation": "regex" }
             }
           ],
@@ -61,45 +61,46 @@
     },
     {
       "id": "4",
-      "name": "HTTP - Obtener Proyecto (OK)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "name": "Code - Parsear Comando Iniciar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [660, 160],
       "parameters": {
-        "method": "GET",
-        "url": "http://187.124.238.94:4000/active",
-        "options": { "timeout": 10000 }
+        "jsCode": "const text = $json.message.text.trim();\nconst match = text.match(/^\\/?\\ *iniciar\\s+(.*)/i);\n\nif (!match || !match[1].trim()) {\n  return [{\n    json: {\n      _help: true,\n      help_text: '📋 *Uso del comando:*\\n\\n`/iniciar NombreCliente | nombre-proyecto`\\n\\nEjemplos:\\n• `/iniciar DM Seguros | dm-enero-01`\\n• `/iniciar DM Seguros` ← proyecto con fecha automática'\n    }\n  }];\n}\n\nconst parts = match[1].split('|');\nconst clientName = parts[0].trim();\nconst today = new Date().toISOString().slice(0, 10);\n\nlet project;\nif (parts.length > 1 && parts[1].trim()) {\n  project = parts[1].trim()\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s+/g, '-')\n    .replace(/[^a-z0-9-]/g, '');\n} else {\n  project = clientName\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s+/g, '-')\n    .replace(/[^a-z0-9-]/g, '') + '-' + today;\n}\n\nreturn [{ json: { client_name: clientName, project, _help: false } }];"
       }
     },
     {
       "id": "5",
-      "name": "HTTP - Upload",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "name": "IF - Es Ayuda",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [880, 160],
       "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/upload",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $json.project, client_name: $json.client_name }) }}",
-        "options": { "timeout": 120000 }
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json._help.toString() }}",
+              "rightValue": "true",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
       }
     },
     {
       "id": "6",
-      "name": "Telegram - Video Listo",
+      "name": "Telegram - Ayuda Iniciar",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1100, 160],
+      "position": [1100, 60],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "5126250705",
-        "text": "={{ '✅ <b>¡Vídeo listo!</b>\\n\\n📁 Proyecto: ' + $('HTTP - Obtener Proyecto (OK)').item.json.project + '\\n☁️ Subido a Google Drive — carpeta Output del cliente.\\n\\nPuedes iniciar un nuevo proyecto cuando quieras.' }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
+        "text": "={{ $json.help_text }}",
+        "additionalFields": { "parse_mode": "Markdown" }
       },
       "credentials": {
         "telegramApi": {
@@ -110,10 +111,66 @@
     },
     {
       "id": "7",
-      "name": "HTTP - Obtener Proyecto (Corrección)",
+      "name": "Telegram - Confirmando Inicio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 260],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ '🚀 Iniciando pipeline...\\n\\n👤 Cliente: <b>' + $json.client_name + '</b>\\n📁 Proyecto: <code>' + $json.project + '</code>\\n\\nRecibirás actualizaciones aquí.' }}",
+        "additionalFields": { "parse_mode": "HTML" }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "8",
+      "name": "HTTP - Lanzar Pipeline",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "position": [1320, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.esencialabs.co/webhook/hyperframes-pipeline",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ client_name: $('Code - Parsear Comando Iniciar').item.json.client_name, project: $('Code - Parsear Comando Iniciar').item.json.project }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "notes": "Dispara el workflow Pipeline Principal. La respuesta llega al Telegram asíncronamente."
+    },
+    {
+      "id": "9",
+      "name": "IF - Es OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [660, 440],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message.text.trim() }}",
+              "rightValue": "^(ok|okay|sí|si|listo|perfecto|publicar|subir|dale|enviar|upload)$",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "10",
+      "name": "HTTP - Obtener Proyecto (OK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 340],
       "parameters": {
         "method": "GET",
         "url": "http://187.124.238.94:4000/active",
@@ -121,21 +178,68 @@
       }
     },
     {
-      "id": "8",
-      "name": "Code - Preparar Corrección",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [880, 440],
+      "id": "11",
+      "name": "HTTP - Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 340],
       "parameters": {
-        "jsCode": "const status = $('HTTP - Obtener Proyecto (Corrección)').item.json;\nconst correctionText = $('Telegram Trigger').item.json.message.text;\n\n// Leer el beats.json actual del proyecto para pasarlo a OpenAI\n// Como no tenemos acceso directo al FS desde N8N, enviamos la nota de corrección\n// y el proyecto al endpoint /correct — OpenAI en ese endpoint re-generará\n\nconst systemPrompt = `Eres un editor de vídeo con IA. El cliente ha pedido cambios en las animaciones del vídeo.\\n\\nTu tarea: ajustar los beats de motion graphics según el feedback del cliente y re-generar el HTML de cada beat modificado.\\n\\nREGLAS HTML ABSOLUTAS:\\n- body { background: transparent !important; width: ${status.video_w}px; height: ${status.video_h}px; margin: 0; padding: 0; overflow: hidden; }\\n- Nunca fondo sólido en el body\\n- Fuentes desde Google Fonts\\n- animation-fill-mode: forwards\\n\\nDevuelve ÚNICAMENTE JSON válido con este formato:\\n{\"beats\":[{\"id\":\"beat_01\",\"type\":\"titulo-impacto\",\"start\":2.5,\"duration\":4.0,\"position\":\"CARD_CENTER\",\"html_content\":\"<!DOCTYPE html>...\"}]}`;\n\nconst userMessage = `El cliente dice: \"${correctionText}\"\\n\\nProyecto: ${status.project}\\nVídeo: ${status.video_w}×${status.video_h} @ ${status.fps}fps\\n\\nAjusta todos los beats necesarios y devuelve la lista completa actualizada.`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    project: status.project,\n    client_name: status.client_name || '',\n    video_w: status.video_w,\n    video_h: status.video_h,\n    fps: status.fps,\n    correction_note: correctionText\n  }\n}];"
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/upload",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project: $json.project, client_name: $json.client_name }) }}",
+        "options": { "timeout": 120000 }
       }
     },
     {
-      "id": "9",
+      "id": "12",
+      "name": "Telegram - Video Listo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1320, 340],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ '✅ <b>¡Vídeo listo!</b>\\n\\n📁 Proyecto: <code>' + $('HTTP - Obtener Proyecto (OK)').item.json.project + '</code>\\n☁️ Subido a Google Drive — carpeta Output del cliente.\\n\\nPuedes iniciar un nuevo proyecto con /iniciar cuando quieras.' }}",
+        "additionalFields": { "parse_mode": "HTML" }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    },
+    {
+      "id": "13",
+      "name": "HTTP - Obtener Proyecto (Corrección)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 540],
+      "parameters": {
+        "method": "GET",
+        "url": "http://187.124.238.94:4000/active",
+        "options": { "timeout": 10000 }
+      }
+    },
+    {
+      "id": "14",
+      "name": "Code - Preparar Corrección",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 540],
+      "parameters": {
+        "jsCode": "const status = $('HTTP - Obtener Proyecto (Corrección)').item.json;\nconst correctionText = $('Telegram Trigger').item.json.message.text;\n\nconst systemPrompt = `Eres un editor de vídeo con IA. El cliente ha pedido cambios en las animaciones.\\n\\nTu tarea: ajustar los beats de motion graphics según el feedback y re-generar el HTML de cada beat modificado.\\n\\nREGLAS HTML ABSOLUTAS:\\n- body { background: transparent !important; width: ${status.video_w}px; height: ${status.video_h}px; margin: 0; padding: 0; overflow: hidden; }\\n- Nunca fondo sólido en el body\\n- Fuentes desde Google Fonts\\n- animation-fill-mode: forwards\\n\\nDevuelve ÚNICAMENTE JSON válido sin markdown:\\n{\"beats\":[{\"id\":\"beat_01\",\"type\":\"titulo-impacto\",\"start\":2.5,\"duration\":4.0,\"position\":\"CARD_CENTER\",\"html_content\":\"<!DOCTYPE html>...\"}]}`;\n\nconst userMessage = `El cliente dice: \"${correctionText}\"\\n\\nProyecto: ${status.project}\\nVídeo: ${status.video_w}×${status.video_h} @ ${status.fps}fps\\n\\nAjusta todos los beats necesarios y devuelve la lista completa actualizada.`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    project: status.project,\n    client_name: status.client_name || '',\n    video_w: status.video_w,\n    video_h: status.video_h,\n    fps: status.fps,\n    correction_note: correctionText\n  }\n}];"
+      }
+    },
+    {
+      "id": "15",
       "name": "HTTP - OpenAI Corrección",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 440],
+      "position": [1320, 540],
       "parameters": {
         "method": "POST",
         "url": "https://api.openai.com/v1/chat/completions",
@@ -154,21 +258,21 @@
       }
     },
     {
-      "id": "10",
+      "id": "16",
       "name": "Code - Parsear Corrección",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 440],
+      "position": [1540, 540],
       "parameters": {
         "jsCode": "let content = $json.choices?.[0]?.message?.content || $json.message?.content || '';\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(content);\n} catch(e) {\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) parsed = JSON.parse(match[0]);\n  else throw new Error('OpenAI no devolvió JSON válido: ' + content.slice(0, 300));\n}\n\nconst prep = $('Code - Preparar Corrección').item.json;\n\nreturn [{\n  json: {\n    beats: parsed.beats || [],\n    project: prep.project,\n    client_name: prep.client_name,\n    video_w: prep.video_w,\n    video_h: prep.video_h,\n    fps: prep.fps,\n    correction_note: prep.correction_note\n  }\n}];"
       }
     },
     {
-      "id": "11",
+      "id": "17",
       "name": "Telegram - Corrigiendo",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1540, 440],
+      "position": [1760, 540],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
@@ -184,11 +288,11 @@
       }
     },
     {
-      "id": "12",
+      "id": "18",
       "name": "HTTP - Correct",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 440],
+      "position": [1980, 540],
       "parameters": {
         "method": "POST",
         "url": "http://187.124.238.94:4000/correct",
@@ -199,19 +303,17 @@
       }
     },
     {
-      "id": "13",
+      "id": "19",
       "name": "Telegram - Preview Corregido 1",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1980, 440],
+      "position": [2200, 540],
       "parameters": {
         "resource": "message",
         "operation": "sendPhoto",
         "chatId": "5126250705",
         "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Code - Parsear Corrección').item.json.project + '/1' }}",
-        "additionalFields": {
-          "caption": "Frame 1 — versión corregida"
-        }
+        "additionalFields": { "caption": "Frame 1 — versión corregida" }
       },
       "credentials": {
         "telegramApi": {
@@ -221,19 +323,17 @@
       }
     },
     {
-      "id": "14",
+      "id": "20",
       "name": "Telegram - Preview Corregido 2",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2200, 440],
+      "position": [2420, 540],
       "parameters": {
         "resource": "message",
         "operation": "sendPhoto",
         "chatId": "5126250705",
         "file": "={{ 'http://187.124.238.94:4000/preview/' + $('Code - Parsear Corrección').item.json.project + '/2' }}",
-        "additionalFields": {
-          "caption": "Frame 2 — versión corregida"
-        }
+        "additionalFields": { "caption": "Frame 2 — versión corregida" }
       },
       "credentials": {
         "telegramApi": {
@@ -243,19 +343,17 @@
       }
     },
     {
-      "id": "15",
+      "id": "21",
       "name": "Telegram - Pedir Feedback Corrección",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2420, 440],
+      "position": [2640, 540],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "5126250705",
-        "text": "={{ '🎬 Nueva versión lista.\\n\\nResponde <b>OK</b> para subir a Drive, o describe más cambios.' }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
+        "text": "🎬 Nueva versión lista.\n\nResponde <b>OK</b> para subir a Drive, o describe más cambios.",
+        "additionalFields": { "parse_mode": "HTML" }
       },
       "credentials": {
         "telegramApi": {
@@ -271,9 +369,27 @@
     },
     "IF - Es Mi Chat": {
       "main": [
-        [{ "node": "IF - Es OK", "type": "main", "index": 0 }],
+        [{ "node": "IF - Es Comando Iniciar", "type": "main", "index": 0 }],
         []
       ]
+    },
+    "IF - Es Comando Iniciar": {
+      "main": [
+        [{ "node": "Code - Parsear Comando Iniciar", "type": "main", "index": 0 }],
+        [{ "node": "IF - Es OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code - Parsear Comando Iniciar": {
+      "main": [[{ "node": "IF - Es Ayuda", "type": "main", "index": 0 }]]
+    },
+    "IF - Es Ayuda": {
+      "main": [
+        [{ "node": "Telegram - Ayuda Iniciar", "type": "main", "index": 0 }],
+        [{ "node": "Telegram - Confirmando Inicio", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram - Confirmando Inicio": {
+      "main": [[{ "node": "HTTP - Lanzar Pipeline", "type": "main", "index": 0 }]]
     },
     "IF - Es OK": {
       "main": [
