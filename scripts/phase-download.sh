@@ -19,10 +19,11 @@ rm -f "$BASE/input"/*.mp4 "$BASE/input"/*.MP4 "$BASE/input"/*.mov \
 # Descargar vídeos
 log "Descargando vídeos desde $GDRIVE_VIDEO"
 rclone copy "$GDRIVE_VIDEO" "$BASE/input/" \
-  --include "*.mp4" --include "*.MP4" --include "*.mov" -v \
+  --include "*.mp4" --include "*.MP4" --include "*.mov" --include "*.MOV" \
+  --include "*.mts" --include "*.MTS" --include "*.avi" --include "*.AVI" -v \
   2>>"$BASE/projects/$PROJECT/pipeline.log"
 
-CLIP_COUNT=$(find "$BASE/input" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) 2>/dev/null | wc -l)
+CLIP_COUNT=$(find "$BASE/input" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.mts" -o -iname "*.avi" \) 2>/dev/null | wc -l)
 CLIP_COUNT=$(( CLIP_COUNT + 0 ))
 [ "$CLIP_COUNT" -eq 0 ] && echo "ERROR: No se encontraron vídeos en $GDRIVE_VIDEO" && exit 1
 log "Clips encontrados: $CLIP_COUNT"
