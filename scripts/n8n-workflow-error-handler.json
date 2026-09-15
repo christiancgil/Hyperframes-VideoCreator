@@ -1,0 +1,59 @@
+{
+  "name": "HyperFrames - Error Handler",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "parameters": {},
+      "notes": "Se activa cuando cualquier workflow que lo tenga configurado como 'Error Workflow' falla."
+    },
+    {
+      "id": "2",
+      "name": "Code - Formatear Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "parameters": {
+        "jsCode": "const exec = $json.execution || {};\nconst wf   = $json.workflow  || {};\nconst err  = $json.error     || {};\nconst node = err.node        || {};\n\nconst ts = new Date().toLocaleTimeString('es-ES', { timeZone: 'America/Bogota', hour12: false });\n\nconst msg =\n  `❌ <b>Error en N8N</b>\\n` +\n  `⏰ ${ts}\\n\\n` +\n  `📋 <b>Workflow:</b> ${wf.name || 'desconocido'}\\n` +\n  `🔧 <b>Nodo:</b> ${node.name || 'desconocido'}\\n\\n` +\n  `💬 <b>Error:</b>\\n<pre>${String(err.message || 'sin detalle').slice(0, 500)}</pre>\\n\\n` +\n  `🔗 <a href=\"${exec.url || 'https://n8n.esencialabs.co'}\">Ver ejecución</a>`;\n\nreturn [{ json: { message: msg } }];"
+      }
+    },
+    {
+      "id": "3",
+      "name": "Telegram - Notificar Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [440, 300],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5126250705",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
+          "name": "Telegram Hyperframes Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger":        { "main": [[{ "node": "Code - Formatear Error",    "type": "main", "index": 0 }]] },
+    "Code - Formatear Error":{ "main": [[{ "node": "Telegram - Notificar Error","type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "instanceId": "hyperframes"
+  }
+}
