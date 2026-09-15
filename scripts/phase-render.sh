@@ -85,7 +85,6 @@ for (const beat of beats || []) {
   const scaleFilter = scale < 1 ? \`-vf scale=\${video_w}:\${video_h}\` : '';
   execSync(\`\${FFMPEG} -loop 1 -framerate \${fps} -i "\${frameFile}" -t \${beat.duration} \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
   execSync(\`rm -f "\${frameFile}"\`);
-  execSync(\`rm -rf "\${framesDir}"\`);
   console.log(\`Renderizado: \${beat.id} → \${movFile} (\${beat.duration}s)\`);
 }
 EOF
