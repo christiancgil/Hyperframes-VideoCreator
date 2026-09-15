@@ -48,15 +48,15 @@ try {
   catch(e) { console.error('Puppeteer no disponible:', e.message); process.exit(1); }
 }
 
-const browser = await puppeteer.launch({
-  executablePath: CHROMIUM,
-  args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new','--allow-file-access-from-files','--disable-web-security']
-});
+const LAUNCH_ARGS = ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--headless=new','--allow-file-access-from-files','--disable-web-security'];
 
 console.log(\`Render config: \${render_w}x\${render_h} @ \${render_fps}fps (source: \${video_w}x\${video_h} @ \${fps}fps)\`);
 
 for (const beat of beats || []) {
   if (!beat.html_content) { console.log(\`Saltando \${beat.id}: sin html_content\`); continue; }
+
+  const movFile = path.join(COMP_DIR, \`\${beat.id}.mov\`);
+  if (fs.existsSync(movFile)) { console.log(\`Saltando \${beat.id}: ya renderizado\`); continue; }
 
   const framesDir = path.join(COMP_DIR, \`frames_\${beat.id}\`);
   fs.mkdirSync(framesDir, { recursive: true });
@@ -66,6 +66,8 @@ for (const beat of beats || []) {
     .replace(/width:\s*\d+px/g, \`width: \${render_w}px\`)
     .replace(/height:\s*\d+px/g, \`height: \${render_h}px\`);
 
+  // Fresh browser per beat — prevents Chrome memory accumulation across beats
+  const browser = await puppeteer.launch({ executablePath: CHROMIUM, args: LAUNCH_ARGS });
   const page = await browser.newPage();
   await page.setViewport({ width: render_w, height: render_h, deviceScaleFactor: 1 });
   await page.setContent(scaledHtml, { waitUntil: 'load', timeout: 30000 });
@@ -80,16 +82,14 @@ for (const beat of beats || []) {
     if (totalFrames > 30 && f % 30 === 0) console.log(\`  \${beat.id}: \${f}/\${totalFrames} frames\`);
   }
   await page.close();
+  await browser.close();
 
-  const movFile = path.join(COMP_DIR, \`\${beat.id}.mov\`);
   // Scale overlay back to source resolution if we downscaled for rendering
   const scaleFilter = scale < 1 ? \`-vf scale=\${video_w}:\${video_h}\` : '';
   execSync(\`\${FFMPEG} -framerate \${render_fps} -i "\${framesDir}/frame_%04d.png" \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
   execSync(\`rm -rf "\${framesDir}"\`);
   console.log(\`Renderizado: \${beat.id} → \${movFile}\`);
 }
-
-await browser.close();
 EOF
 
 log "Beats renderizados. Compositando vídeo final..."
