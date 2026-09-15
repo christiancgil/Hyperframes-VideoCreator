@@ -10,7 +10,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "hyperframes-pipeline",
-        "responseMode": "lastNode",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson",
         "options": {}
       },
       "notes": "Recibe: { client_name, project, style? }\nEjemplo: { \"client_name\": \"DM Seguros\", \"project\": \"dm-2024-01\" }"
@@ -296,17 +297,6 @@
         }
       }
     },
-    {
-      "id": "18",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [3740, 300],
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: true, project: $('Webhook').item.json.body.project, message: 'Pipeline completado. Esperando feedback en Telegram.' }) }}"
-      }
-    }
   ],
   "connections": {
     "Webhook":                { "main": [[{ "node": "HTTP - Init",            "type": "main", "index": 0 }]] },
@@ -325,7 +315,7 @@
     "Telegram - Preview 1":   { "main": [[{ "node": "Telegram - Preview 2",   "type": "main", "index": 0 }]] },
     "Telegram - Preview 2":   { "main": [[{ "node": "Telegram - Preview 3",   "type": "main", "index": 0 }]] },
     "Telegram - Preview 3":   { "main": [[{ "node": "Telegram - Pedir Feedback","type": "main", "index": 0 }]] },
-    "Telegram - Pedir Feedback":{ "main": [[{ "node": "Respond to Webhook",   "type": "main", "index": 0 }]] }
+    "Telegram - Pedir Feedback":{ "main": [[]] }
   },
   "active": false,
   "settings": {
