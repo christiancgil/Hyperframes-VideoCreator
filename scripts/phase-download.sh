@@ -29,11 +29,71 @@ log "Clips encontrados: $CLIP_COUNT"
 # Descargar audio separado si existe
 AUDIO_COUNT=$(rclone ls "$GDRIVE_AUDIO" 2>/dev/null | wc -l || echo 0)
 HAS_SEPARATE_AUDIO=false
+SCRIPT_FILE=""
 if [ "$AUDIO_COUNT" -gt 0 ]; then
   log "Audio separado detectado en $GDRIVE_AUDIO"
   rclone copy "$GDRIVE_AUDIO" "$BASE/input/" \
-    --include "*.mp3" --include "*.wav" --include "*.m4a" --include "*.aac" -v \
+    --include "*.mp3" --include "*.wav" --include "*.m4a" --include "*.aac" \
+    --include "*.md" -v \
     2>>"$BASE/projects/$PROJECT/pipeline.log"
+
+  # Validar que existe el guion MD — obligatorio cuando hay audio separado
+  SCRIPT_FILE=$(ls "$BASE/input"/*.md 2>/dev/null | head -1 || echo "")
+  if [ -z "$SCRIPT_FILE" ]; then
+    echo "ERROR: Se encontró audio en '$GDRIVE_AUDIO' pero no hay archivo .md con el guion." >&2
+    echo "       Sube un archivo .md a la carpeta 'Input Audio' con el texto del voice over y las escenas." >&2
+    exit 1
+  fi
+  log "Guion encontrado: $(basename "$SCRIPT_FILE")"
+
+  # Parsear el guion y guardar como script.json
+  node --input-type=module <<NODEEOF 2>>"$BASE/projects/$PROJECT/pipeline.log"
+import fs from 'fs';
+
+const raw = fs.readFileSync('${SCRIPT_FILE}', 'utf8');
+const lines = raw.split('\n');
+
+const scenes = [];
+let current = null;
+
+for (const line of lines) {
+  // Detectar cabecera de escena: ## Escena N — Título [HH:MM-HH:MM] (timestamps opcionales)
+  const sceneMatch = line.match(/^##\s+(.+)/);
+  if (sceneMatch) {
+    if (current) scenes.push(current);
+    const header = sceneMatch[1].trim();
+    const timeMatch = header.match(/\[(\d{1,2}:\d{2}(?::\d{2})?)-(\d{1,2}:\d{2}(?::\d{2})?)\]/);
+    const toSeconds = t => {
+      const parts = t.split(':').map(Number);
+      return parts.length === 3 ? parts[0]*3600 + parts[1]*60 + parts[2] : parts[0]*60 + parts[1];
+    };
+    current = {
+      title: header.replace(/\[[\d:]+\-[\d:]+\]/, '').trim(),
+      start_hint: timeMatch ? toSeconds(timeMatch[1]) : null,
+      end_hint:   timeMatch ? toSeconds(timeMatch[2]) : null,
+      voiceover: ''
+    };
+    continue;
+  }
+
+  // Capturar texto de voice over (acepta **Voice over:**, **VO:**, o línea de texto normal bajo la escena)
+  if (current) {
+    const voLine = line.replace(/^\*\*voice\s*o(?:ver|ff)\s*:?\*\*/i, '').replace(/^>\s*/, '').trim();
+    if (voLine && !voLine.startsWith('#')) {
+      current.voiceover += (current.voiceover ? ' ' : '') + voLine.replace(/^["']|["']$/g, '');
+    }
+  }
+}
+if (current) scenes.push(current);
+
+// Extraer texto completo del VO para transcripción
+const fullVoiceover = scenes.map(s => s.voiceover).filter(Boolean).join(' ');
+
+const result = { scenes, full_voiceover: fullVoiceover, source_file: '${SCRIPT_FILE}' };
+fs.writeFileSync('$BASE/projects/$PROJECT/script.json', JSON.stringify(result, null, 2));
+console.log(\`Guion parseado: \${scenes.length} escenas, \${fullVoiceover.length} caracteres de VO\`);
+NODEEOF
+
   HAS_SEPARATE_AUDIO=true
 fi
 
@@ -127,6 +187,9 @@ node --input-type=module <<EOF
 import fs from 'fs';
 const f = '$BASE/projects/$PROJECT/status.json';
 const s = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f)) : {};
+const scriptFile = '$BASE/projects/$PROJECT/script.json';
+const hasScript = fs.existsSync(scriptFile);
+const scriptData = hasScript ? JSON.parse(fs.readFileSync(scriptFile)) : null;
 fs.writeFileSync(f, JSON.stringify({...s,
   status: 'downloaded',
   video_path: '$VIDEO',
@@ -135,6 +198,8 @@ fs.writeFileSync(f, JSON.stringify({...s,
   fps: $VIDEO_FPS,
   duration: $DURATION,
   has_separate_audio: $HAS_SEPARATE_AUDIO,
+  has_script: hasScript,
+  script_scenes: scriptData?.scenes?.length || 0,
   updated_at: new Date().toISOString()
 }, null, 2));
 EOF

@@ -124,7 +124,14 @@ const server = http.createServer(async (req, res) => {
       }
 
       const info = getStatus(project);
-      return json(res, 200, { ok: true, ...info });
+
+      // Adjuntar script/guion si existe (N8N lo pasará a OpenAI para planificación de beats)
+      const scriptPath = `${BASE}/projects/${project}/script.json`;
+      const script = fs.existsSync(scriptPath)
+        ? JSON.parse(fs.readFileSync(scriptPath, 'utf8'))
+        : null;
+
+      return json(res, 200, { ok: true, ...info, script });
     }
 
     // ── POST /transcribe ─────────────────────────────────────────────────────
