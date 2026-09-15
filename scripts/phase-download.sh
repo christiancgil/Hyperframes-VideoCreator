@@ -180,10 +180,11 @@ PYEOF
 fi
 
 # Detectar metadatos del vídeo final
-VIDEO_W=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=width   -of csv=p=0 "$VIDEO")
-VIDEO_H=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=height  -of csv=p=0 "$VIDEO")
-VIDEO_FPS=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$VIDEO" | awk -F'/' '{printf "%.0f", $1/$2}')
-DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$VIDEO")
+# cut -d',' -f1 elimina la coma final que algunos ffprobe añaden en formato csv
+VIDEO_W=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=width   -of csv=p=0 "$VIDEO" | cut -d',' -f1 | tr -d '[:space:]')
+VIDEO_H=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=height  -of csv=p=0 "$VIDEO" | cut -d',' -f1 | tr -d '[:space:]')
+VIDEO_FPS=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$VIDEO" | cut -d',' -f1 | awk -F'/' '{printf "%.0f", $1/$2}')
+DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$VIDEO" | cut -d',' -f1 | tr -d '[:space:]')
 
 # Guardar en status.json para que la API lo devuelva
 node --input-type=module <<EOF
