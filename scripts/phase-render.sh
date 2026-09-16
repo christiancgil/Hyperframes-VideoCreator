@@ -124,7 +124,7 @@ if (filterParts.length === 0) {
   fs.copyFileSync(editedVideo, finalVideo);
 } else {
   const filter = filterParts.join(';');
-  const cmd = \`\${ffmpeg} \${inputs.join(' ')} -filter_complex "\${filter}" -map "[\${lastOut}]" -map 0:a -c:v libx264 -preset slow -crf 18 -c:a copy "\${finalVideo}" -y\`;
+  const cmd = \`\${ffmpeg} \${inputs.join(' ')} -filter_complex "\${filter}" -map "[\${lastOut}]" -map 0:a -c:v libx264 -preset fast -crf 22 -c:a copy "\${finalVideo}" -y\`;
   console.log('Compositing cmd:', cmd.slice(0, 120) + '...');
   execSync(cmd, { stdio: ['pipe', 'inherit', 'inherit'] });
 }
