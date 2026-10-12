@@ -35,44 +35,92 @@ Google Fonts — incluir siempre en `<head>`:
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 ```
 
-## Tamaños de fuente (9:16, 720×1280px)
+## Tamaños de fuente (9:16, 1080×1920px)
 
-El cliente prefiere fuentes grandes y legibles en móvil. No negociar hacia abajo.
+El cliente prefiere fuentes GRANDES y legibles en móvil. No negociar hacia abajo.
 
 | Elemento | Tamaño mínimo |
 |---|---|
-| Título principal (Space Grotesk) | **52px** |
-| Subtítulo / highlight | **40–50px** |
-| Cuerpo / sub | **22–23px** |
-| Bullets / steps | **28–32px** |
-| Label / tag | **17–18px** |
-| Botón CTA | **22px** |
-| Emoji display | **52–56px** |
+| Título principal (Space Grotesk 700) | **90px** |
+| Número grande | **160–200px** |
+| Subtítulo / highlight | **70–75px** |
+| Bullets / steps (Inter 600) | **60–65px** |
+| Header label / tag sobre la card | **28–32px** (mayúsculas, tracking 0.15em) |
+| Botón CTA | **60px** |
+| Cuerpo de apoyo | **42px** |
 
 > Si el cliente pide "más grande", aumentar un 20–25% sobre los valores actuales.
 
 ## Estilo de cards
 
-Fondo semitransparente marino al ~62%, blur 8px (formato 9:16):
+⚠️ IMPORTANTE: el render usa Chrome headless con `--disable-gpu`. `backdrop-filter` NO funciona en ese entorno.
+Usar siempre fondo sólido semitransparente con opacidad ≥ 0.82:
 
 ```css
-background: rgba(15, 23, 42, 0.62);
-backdrop-filter: blur(8px);
--webkit-backdrop-filter: blur(8px);
-border: 1px solid rgba(251, 146, 60, 0.30);
-border-radius: 14px;
-box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(251,146,60,0.10);
+/* Card estándar — USAR SIEMPRE ESTE, sin backdrop-filter */
+background: rgba(10, 15, 30, 0.88);
+border-top: 3px solid #fb923c;
+border-radius: 16px;
+padding: 36px 44px;
+box-shadow: 0 8px 40px rgba(0, 0, 0, 0.75);
 ```
 
-Variante con acento lateral (cards de lista / highlight):
+Variante bullet-list (acento lateral izquierdo):
 ```css
-border-left: 3px solid #fb923c;
+background: rgba(10, 15, 30, 0.88);
+border-left: 4px solid #fb923c;
+border-radius: 12px;
+padding: 32px 40px;
 ```
 
-Variante card de cierre (borde más pronunciado):
+Variante cierre:
 ```css
-border: 2px solid rgba(251,146,60,0.55);
-box-shadow: 0 0 48px rgba(251,146,60,0.22), 0 4px 32px rgba(0,0,0,0.6);
+background: rgba(10, 15, 30, 0.92);
+border: 2px solid rgba(251,146,60,0.60);
+box-shadow: 0 0 48px rgba(251,146,60,0.25), 0 8px 40px rgba(0,0,0,0.8);
+```
+
+## Estilo de listas (bullet-list)
+
+Siempre incluir un header label encima de la lista y bullets naranja:
+
+```html
+<div class="label">TAMBIÉN INFLUYE…</div>   <!-- o el contexto del beat -->
+<ul>
+  <li>Ítem uno</li>
+  <li>Ítem dos</li>
+</ul>
+```
+
+```css
+.label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #fb923c;
+  margin-bottom: 20px;
+}
+ul { list-style: none; padding: 0; margin: 0; }
+li {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 62px;
+  color: #f8fafc;
+  padding-left: 56px;
+  position: relative;
+  margin-bottom: 16px;
+}
+li::before {
+  content: "•";
+  color: #fb923c;
+  font-size: 72px;
+  position: absolute;
+  left: 0;
+  top: -8px;
+  line-height: 1;
+}
 ```
 
 ## Animaciones — Estilo ENÉRGICO
