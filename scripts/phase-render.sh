@@ -65,27 +65,52 @@ for (const beat of beats || []) {
     .replace(/width:\s*\d+px/g, \`width: \${render_w}px\`)
     .replace(/height:\s*\d+px/g, \`height: \${render_h}px\`);
 
-  // Take a single screenshot after CSS animations complete (all are <1s).
-  // Repeated screenshots in headless Chrome software-rendering crash at ~90 frames.
-  // The overlay content visibility matters more than the 0.3s entry animation.
+  // Multi-frame capture: take screenshots at key animation milestones so CSS
+  // animations (card entry, bullet reveals, counters) are visible in the final video.
+  // Each browser instance is fresh per beat — no cumulative crash risk.
   const browser = await puppeteer.launch({ executablePath: CHROMIUM, args: LAUNCH_ARGS });
   const page = await browser.newPage();
   await page.setViewport({ width: render_w, height: render_h, deviceScaleFactor: 1 });
-  await page.setContent(scaledHtml, { waitUntil: 'load', timeout: 30000 });
+  await page.setContent(scaledHtml, { waitUntil: 'networkidle2', timeout: 30000 });
   await page.evaluate(() => { document.body.style.background = 'transparent'; });
-  // Wait 1.5s for all CSS animations to complete and reach their final state
-  await new Promise(r => setTimeout(r, 1500));
 
-  const frameFile = path.join(COMP_DIR, \`\${beat.id}_frame.png\`);
-  await page.screenshot({ path: frameFile, omitBackground: true });
+  // Snapshot timestamps (ms): capture card-entry, staggered item reveals, final hold.
+  // Spaced to cover typical CSS animation durations (entry 0.3s, reveals every 0.3-0.5s).
+  const SNAP_MS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500];
+  const snapFrames = [];
+  let elapsed = 0;
+  for (const targetMs of SNAP_MS) {
+    const wait = targetMs - elapsed;
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    const fp = path.join(COMP_DIR, \`\${beat.id}_snap\${targetMs}.png\`);
+    await page.screenshot({ path: fp, omitBackground: true });
+    snapFrames.push({ path: fp, ms: targetMs });
+    elapsed = targetMs;
+  }
   await page.close();
   await browser.close();
 
-  // Loop the single frame to full beat duration at source framerate
-  const scaleFilter = scale < 1 ? \`-vf scale=\${video_w}:\${video_h}\` : '';
-  execSync(\`\${FFMPEG} -loop 1 -framerate \${fps} -i "\${frameFile}" -t \${beat.duration} \${scaleFilter} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
-  execSync(\`rm -f "\${frameFile}"\`);
-  console.log(\`Renderizado: \${beat.id} → \${movFile} (\${beat.duration}s)\`);
+  // Build a concat input file: each snapshot is held until the next, last frame
+  // fills the rest of the beat duration. Scale up to source resolution if needed.
+  const scaleFilter = scale < 1 ? \`,scale=\${video_w}:\${video_h}\` : '';
+  const concatFile = path.join(COMP_DIR, \`\${beat.id}_concat.txt\`);
+  let concatLines = '';
+  for (let i = 0; i < snapFrames.length; i++) {
+    const holdSec = i < snapFrames.length - 1
+      ? (snapFrames[i + 1].ms - snapFrames[i].ms) / 1000
+      : Math.max(0.04, beat.duration - snapFrames[i].ms / 1000);
+    concatLines += \`file '\${snapFrames[i].path}'\nduration \${holdSec.toFixed(3)}\n\`;
+  }
+  // ffmpeg concat demuxer needs the last file repeated without duration to flush
+  concatLines += \`file '\${snapFrames[snapFrames.length - 1].path}'\n\`;
+  fs.writeFileSync(concatFile, concatLines);
+
+  execSync(\`\${FFMPEG} -f concat -safe 0 -i "\${concatFile}" -vf "format=yuva420p\${scaleFilter},format=yuva444p12le" -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
+
+  // Clean up snapshot PNGs and concat list
+  for (const f of snapFrames) fs.unlinkSync(f.path);
+  fs.unlinkSync(concatFile);
+  console.log(\`Renderizado: \${beat.id} → \${movFile} (\${beat.duration}s, \${snapFrames.length} frames)\`);
 }
 EOF
 
@@ -113,7 +138,7 @@ for (const beat of beats || []) {
   if (!fs.existsSync(mov)) continue;
   const end = beat.start + beat.duration;
   inputs.push(\`-i "\${mov}"\`);
-  filterParts.push(\`[\${idx}:v]setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
+  filterParts.push(\`[\${idx}:v]format=yuva420p,setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
   filterParts.push(\`[\${lastOut}][ov\${idx}]overlay=0:0:enable='between(t,\${beat.start},\${end})'[v\${idx}]\`);
   lastOut = \`v\${idx}\`;
   idx++;

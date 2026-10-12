@@ -6,31 +6,275 @@
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "parameters": {},
-      "notes": "Se activa cuando cualquier workflow que lo tenga configurado como 'Error Workflow' falla."
+      "notes": "Se activa cuando cualquier nodo del pipeline principal falla sin continueOnFail."
     },
     {
       "id": "2",
-      "name": "Code - Formatear Error",
+      "name": "Code - Extraer Contexto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 300],
+      "position": [
+        240,
+        300
+      ],
       "parameters": {
-        "jsCode": "const exec = $json.execution || {};\nconst wf   = $json.workflow  || {};\nconst err  = $json.error     || {};\nconst node = err.node        || {};\n\nconst ts = new Date().toLocaleTimeString('es-ES', { timeZone: 'America/Bogota', hour12: false });\n\nconst msg =\n  `❌ <b>Error en N8N</b>\\n` +\n  `⏰ ${ts}\\n\\n` +\n  `📋 <b>Workflow:</b> ${wf.name || 'desconocido'}\\n` +\n  `🔧 <b>Nodo:</b> ${node.name || 'desconocido'}\\n\\n` +\n  `💬 <b>Error:</b>\\n<pre>${String(err.message || 'sin detalle').slice(0, 500)}</pre>\\n\\n` +\n  `🔗 <a href=\"${exec.url || 'https://n8n.esencialabs.co'}\">Ver ejecución</a>`;\n\nreturn [{ json: { message: msg } }];"
-      }
+        "jsCode": "const exec = $json.execution || {};\nconst err  = exec.error || {};\nconst nodeName = (err.node && err.node.name) || exec.lastNodeExecuted || 'desconocido';\nconst errorMsg = err.message || 'Error desconocido';\n\nconst phaseMap = {\n  'HTTP - Download':              { phase: 'download',   fix: null },\n  'HTTP - Transcribe':            { phase: 'transcribe', fix: 'delete_transcript' },\n  'HTTP - Cut':                   { phase: 'cut',        fix: 'delete_edited' },\n  'HTTP - HTML':                  { phase: 'html',       fix: 'delete_beats' },\n  'HTTP - Render':                { phase: 'render',     fix: 'delete_renders' },\n  'HTTP - OpenAI Beats':          { phase: 'ai_beats',   fix: null },\n  'HTTP - OpenAI HTML':           { phase: 'ai_beats',   fix: null },\n  'Code - Parsear Beats':         { phase: 'ai_beats',   fix: null },\n  'Code - Preparar HTML Prompt':  { phase: 'ai_beats',   fix: null },\n};\nconst mapped = phaseMap[nodeName] || { phase: 'unknown', fix: null };\n\nreturn [{ json: {\n  phase:         mapped.phase,\n  suggested_fix: mapped.fix,\n  error_msg:     String(errorMsg).slice(0, 800),\n  node_name:     nodeName,\n  workflow_url:  exec.url || 'https://n8n.esencialabs.co'\n}}];"
+      },
+      "continueOnFail": true
     },
     {
       "id": "3",
-      "name": "Telegram - Notificar Error",
+      "name": "HTTP - Get Active Project",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://187.124.238.94:4000/active",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "4",
+      "name": "HTTP - Get Pipeline Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://187.124.238.94:4000/log/' + ($('HTTP - Get Active Project').item.json.project || 'unknown') }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "5",
+      "name": "Code - Build Diagnose Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx     = $('Code - Extraer Contexto').item.json;\nconst active  = $('HTTP - Get Active Project').item.json;\nconst logData = $('HTTP - Get Pipeline Log').item.json;\nconst project = active.project || 'unknown';\nconst lastLog = (logData.log || '').split('\\n').slice(-40).join('\\n');\n\nconst systemPrompt = `You are a diagnostic AI for a video pipeline on Ubuntu 24.04.\nThe pipeline uses Puppeteer+Chrome, FFmpeg (ProRes 4444), Node.js, rclone, and Whisper API.\n\nAVAILABLE FIX ACTIONS (return exactly one or null):\n- \"delete_renders\" — delete corrupt .mov files (Chrome crash, moov atom, ENOENT on .mov)\n- \"delete_transcript\" — delete audio_whisper.mp3 + transcript.json (Whisper API failure)\n- \"delete_edited\" — delete edited video (ffmpeg cut failure)\n- \"delete_beats\" — delete beats_with_paths.json (HTML generation failure)\n- \"kill_ffmpeg\" — kill hanging ffmpeg (timeout / ETIMEDOUT)\n- \"reset_project\" — full composition dir clean (unknown/unrecoverable)\n- null — cannot auto-fix; needs human (rclone auth error, OpenAI quota, etc.)\n\nAlways respond with JSON only: {\"fix_action\": \"...\", \"explanation\": \"...\"}`;\n\nconst userMsg = `FAILED PHASE: ${ctx.phase}\\nFAILED NODE: ${ctx.node_name}\\nPROJECT: ${project}\\nERROR: ${ctx.error_msg}\\n\\nLAST LOG LINES:\\n${lastLog}`;\n\nreturn [{ json: {\n  system_prompt: systemPrompt,\n  user_message: userMsg,\n  project,\n  phase: ctx.phase,\n  suggested_fix: ctx.suggested_fix,\n  error_msg: ctx.error_msg,\n  workflow_url: ctx.workflow_url\n}}];"
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "6",
+      "name": "HTTP - OpenAI Diagnose",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', response_format: { type: 'json_object' }, max_tokens: 256, temperature: 0, messages: [{ role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_message }] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "continueOnFail": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "jxlWk54uGLrXnR7X",
+          "name": "OpenAI account 3"
+        }
+      }
+    },
+    {
+      "id": "7",
+      "name": "Code - Parse Fix Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "let content = $json.choices?.[0]?.message?.content || '{\"fix_action\":null,\"explanation\":\"OpenAI no disponible\"}';\ncontent = content.replace(/```json\\s*/g,'').replace(/```\\s*/g,'').trim();\nlet parsed;\ntry { parsed = JSON.parse(content); }\ncatch(e) { parsed = { fix_action: null, explanation: 'JSON parse error: ' + content.slice(0,100) }; }\n\nconst diagCtx = $('Code - Build Diagnose Prompt').item.json;\nreturn [{ json: {\n  fix_action:  parsed.fix_action  || diagCtx.suggested_fix || null,\n  explanation: parsed.explanation || '',\n  project:     diagCtx.project,\n  phase:       diagCtx.phase,\n  error_msg:   diagCtx.error_msg,\n  workflow_url: diagCtx.workflow_url,\n  should_fix:  !!(parsed.fix_action || diagCtx.suggested_fix)\n}}];"
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "8",
+      "name": "IF - Can Auto-Fix",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "can-autofix",
+              "leftValue": "={{ $json.should_fix }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "9",
+      "name": "HTTP - Apply Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/fix",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project: $json.project, action: $json.fix_action }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "10",
+      "name": "HTTP - Retry Phase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://187.124.238.94:4000/retry-phase",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project: $('Code - Parse Fix Action').item.json.project, phase: $('Code - Parse Fix Action').item.json.phase }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "11",
+      "name": "Code - Check Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const r = $json;\nconst fixCtx = $('Code - Parse Fix Action').item.json;\nconst success = r.ok === true && r.error === undefined;\nreturn [{ json: {\n  success,\n  project: fixCtx.project,\n  phase: fixCtx.phase,\n  fix_action: fixCtx.fix_action,\n  explanation: fixCtx.explanation,\n  error_msg: r.error || fixCtx.error_msg,\n  workflow_url: fixCtx.workflow_url\n}}];"
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "12",
+      "name": "IF - Retry OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "retry-ok",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "13",
+      "name": "Telegram - Auto-Fixed",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [440, 300],
+      "position": [
+        2880,
+        100
+      ],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
         "chatId": "5126250705",
-        "text": "={{ $json.message }}",
+        "text": "={{ '✅ <b>Auto-fix aplicado</b>\\n📁 Proyecto: <code>' + $json.project + '</code>\\n🔧 Fix: <code>' + $json.fix_action + '</code>\\n📋 Fase reintentada: ' + $json.phase + '\\n\\n' + ($json.explanation || '') }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "14",
+      "name": "Telegram - Fix Fallido",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        300
+      ],
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "={{ '🚨 <b>Auto-fix falló — intervención necesaria</b>\\n📁 Proyecto: <code>' + $json.project + '</code>\\n📋 Fase: ' + $json.phase + '\\n🔧 Fix intentado: ' + ($json.fix_action || 'ninguno') + '\\n\\n🔍 Diagnóstico: ' + ($json.explanation || 'sin diagnóstico') + '\\n\\n💬 Error: <pre>' + String($json.error_msg || '').slice(0,400) + '</pre>\\n\\n🔗 <a href=\"' + ($json.workflow_url || 'https://n8n.esencialabs.co') + '\">Ver ejecución</a>' }}",
         "additionalFields": {
           "parse_mode": "HTML",
           "disable_web_page_preview": true
@@ -38,15 +282,183 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "REEMPLAZAR_CON_ID_CREDENCIAL",
-          "name": "Telegram Hyperframes Bot"
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "15",
+      "name": "Telegram - No Auto-Fix",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        500
+      ],
+      "parameters": {
+        "chatId": "5126250705",
+        "text": "={{ '🔴 <b>Error sin auto-fix disponible</b>\\n📁 Proyecto: <code>' + $('Code - Parse Fix Action').item.json.project + '</code>\\n📋 Fase: ' + $('Code - Parse Fix Action').item.json.phase + '\\n\\n🔍 Diagnóstico: ' + ($('Code - Parse Fix Action').item.json.explanation || 'sin diagnóstico') + '\\n\\n💬 Error: <pre>' + String($('Code - Parse Fix Action').item.json.error_msg || '').slice(0,400) + '</pre>\\n\\n🔗 <a href=\"' + ($('Code - Parse Fix Action').item.json.workflow_url || 'https://n8n.esencialabs.co') + '\">Ver ejecución</a>' }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "YvmgWQMqVWetyrBd",
+          "name": "Telegram account"
         }
       }
     }
   ],
   "connections": {
-    "Error Trigger":        { "main": [[{ "node": "Code - Formatear Error",    "type": "main", "index": 0 }]] },
-    "Code - Formatear Error":{ "main": [[{ "node": "Telegram - Notificar Error","type": "main", "index": 0 }]] }
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - Extraer Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extraer Contexto": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Active Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Active Project": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Pipeline Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Pipeline Log": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Diagnose Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Diagnose Prompt": {
+      "main": [
+        [
+          {
+            "node": "HTTP - OpenAI Diagnose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - OpenAI Diagnose": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Fix Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Fix Action": {
+      "main": [
+        [
+          {
+            "node": "IF - Can Auto-Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Can Auto-Fix": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Apply Fix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - No Auto-Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Apply Fix": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Retry Phase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Retry Phase": {
+      "main": [
+        [
+          {
+            "node": "Code - Check Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Check Retry": {
+      "main": [
+        [
+          {
+            "node": "IF - Retry OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Retry OK": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Auto-Fixed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - Fix Fallido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
   "settings": {
@@ -54,6 +466,6 @@
     "saveManualExecutions": true
   },
   "meta": {
-    "instanceId": "hyperframes"
+    "instanceId": "ca909d39e8044184bf800b77fc3e957ed8d5a4c580087639692415cc2c770b70"
   }
 }

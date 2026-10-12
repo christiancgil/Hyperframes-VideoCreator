@@ -12,13 +12,12 @@ OUTPUT="$BASE/output/${PROJECT}_edited.mp4"
 
 log "Detectando silencios para corte..."
 
-# Detectar silencios > 0.5s con umbral -50dB
-SILENCES=$($FFMPEG -i "$VIDEO" -af silencedetect=n=-50dB:d=0.5 -f null - 2>&1 | \
+# Umbral -40dB, duración mínima 0.3s — captura pausas naturales entre frases
+SILENCES=$($FFMPEG -i "$VIDEO" -af silencedetect=n=-40dB:d=0.3 -f null - 2>&1 | \
   grep -E "silence_start|silence_end")
 
 DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$VIDEO")
 
-# Calcular segmentos a mantener con Python
 SEGMENTS=$(python3 - <<PYEOF
 import re, json
 
@@ -28,61 +27,74 @@ duration = float("$DURATION")
 starts = [float(x) for x in re.findall(r'silence_start: ([\d.]+)', raw)]
 ends   = [float(x) for x in re.findall(r'silence_end: ([\d.]+)', raw)]
 
-# Construir keep intervals
 keep = []
 prev = 0.0
 for s, e in zip(starts, ends):
-    if s - prev > 0.1:  # segmento mínimo de 100ms
-        keep.append((round(prev, 3), round(s, 3)))
-    prev = e
-if duration - prev > 0.1:
+    seg_end = s + 0.05   # 50ms de respiro antes del corte para evitar clics de audio
+    if seg_end - prev > 0.15:
+        keep.append((round(prev, 3), round(seg_end, 3)))
+    prev = max(e - 0.05, 0.0)  # retroceder 50ms al reanudar
+if duration - prev > 0.15:
     keep.append((round(prev, 3), round(duration, 3)))
 
 print(json.dumps(keep))
 PYEOF
 )
 
-log "Segmentos a mantener: $SEGMENTS"
+NSEG=$(echo "$SEGMENTS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+log "Segmentos a mantener: $NSEG (de $DURATION s totales)"
 
-# Cortar y concatenar segmentos
-CONCAT_LIST="$BASE/projects/$PROJECT/cut_list.txt"
-rm -f "$CONCAT_LIST"
-IDX=0
-echo "$SEGMENTS" | python3 - <<PYEOF
-import json, subprocess, os, sys
+# Sin silencios detectados → copiar sin cortar
+if [ "$NSEG" -le 1 ]; then
+  log "Sin silencios detectados — copiando video sin cortes"
+  $FFMPEG -i "$VIDEO" -c:v copy -c:a aac -b:a 192k "$OUTPUT" -y \
+    2>>"$BASE/projects/$PROJECT/pipeline.log"
+  log "Corte listo (sin cambios): $OUTPUT"
+  exit 0
+fi
 
-segments = json.loads('$SEGMENTS'.replace("'", '"'))
-base = '$BASE'
-project = '$PROJECT'
-ffmpeg = '$FFMPEG'
-concat_list = '$CONCAT_LIST'
+# Corte con filtros trim/atrim en un solo paso — sin archivos intermedios.
+# Evita el problema de c:v copy que produce segmentos sin video cuando el corte
+# cae entre keyframes, lo que hace que el concat final pierda la pista de video.
+python3 - <<PYEOF 2>>"$BASE/projects/$PROJECT/pipeline.log"
+import json, subprocess, sys
 
-files = []
+segments = json.loads('$SEGMENTS')
+ffmpeg   = '$FFMPEG'
+video    = '$VIDEO'
+output   = '$OUTPUT'
+log_file = '$BASE/projects/$PROJECT/pipeline.log'
+
+n = len(segments)
+filter_parts = []
+
 for i, (start, end) in enumerate(segments):
-    out = f"{base}/projects/{project}/seg_{i:03d}.mp4"
-    cmd = [ffmpeg, '-i', f'{base}/output/merged.mp4',
-           '-ss', str(start), '-to', str(end),
-           '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
-           out, '-y']
-    subprocess.run(cmd, capture_output=True)
-    files.append(out)
+    filter_parts.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{i}]")
+    filter_parts.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{i}]")
 
-with open(concat_list, 'w') as f:
-    for fp in files:
-        f.write(f"file '{fp}'\n")
+concat_pads = "".join(f"[v{i}][a{i}]" for i in range(n))
+filter_parts.append(f"{concat_pads}concat=n={n}:v=1:a=1[v][a]")
+
+filter_complex = ";".join(filter_parts)
+
+cmd = [
+    ffmpeg, '-i', video,
+    '-filter_complex', filter_complex,
+    '-map', '[v]', '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '192k',
+    output, '-y'
+]
+
+with open(log_file, 'a') as lf:
+    result = subprocess.run(cmd, stdout=lf, stderr=lf)
+
+if result.returncode != 0:
+    print(f"ERROR: ffmpeg exited with code {result.returncode}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"Corte completado: {n} segmentos")
 PYEOF
 
-$FFMPEG -f concat -safe 0 -i "$CONCAT_LIST" \
-  -c:v copy -c:a aac -b:a 192k "$OUTPUT" -y \
-  2>>"$BASE/projects/$PROJECT/pipeline.log"
-
-# Limpiar segmentos temporales
-python3 -c "
-import json, os
-segs = json.loads('$SEGMENTS')
-for i in range(len(segs)):
-    p = '$BASE/projects/$PROJECT/seg_{:03d}.mp4'.format(i)
-    if os.path.exists(p): os.remove(p)
-"
-
-log "Corte listo: $OUTPUT"
+FINAL_DUR=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$OUTPUT")
+log "Corte listo: $OUTPUT (${FINAL_DUR}s)"

@@ -186,6 +186,64 @@ VIDEO_H=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=height  -of
 VIDEO_FPS=$($FFPROBE -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$VIDEO" | cut -d',' -f1 | awk -F'/' '{printf "%.0f", $1/$2}')
 DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$VIDEO" | cut -d',' -f1 | tr -d '[:space:]')
 
+# Detectar rotación (iPhones graban portrait con rotation=-90 en metadata).
+# ffprobe devuelve dimensiones físicas del sensor — hay que swapearlas si hay rotación.
+ROTATION=$($FFPROBE -v quiet -select_streams v:0 \
+  -show_entries stream_side_data=rotation \
+  -of default=noprint_wrappers=1:nokey=1 "$VIDEO" 2>/dev/null | head -1 | tr -d '[:space:]')
+
+if [ "$ROTATION" = "-90" ] || [ "$ROTATION" = "90" ] || [ "$ROTATION" = "270" ] || [ "$ROTATION" = "-270" ]; then
+  _TMP=$VIDEO_W; VIDEO_W=$VIDEO_H; VIDEO_H=$_TMP
+  log "Rotación ${ROTATION}°: dimensiones display → ${VIDEO_W}×${VIDEO_H} (portrait)"
+fi
+
+# Detectar si el vídeo es HDR (bt2020 / PQ / HLG) para forzar conversión SDR al normalizar
+COLOR_SPACE=$($FFPROBE -v quiet -select_streams v:0 \
+  -show_entries stream=color_space,color_primaries,color_transfer \
+  -of csv=p=0 "$VIDEO" 2>/dev/null | head -1 | tr -d '[:space:]')
+IS_HDR=false
+if echo "$COLOR_SPACE" | grep -qiE "bt2020|smpte2084|arib"; then
+  IS_HDR=true
+  log "HDR detectado ($COLOR_SPACE) — se normalizará a SDR"
+fi
+
+# Normalizar vídeo: rotación + SDR + 1080p + 30fps
+# Salida a 1080p portrait (1080×1920 para 9:16): suficiente para Reels/TikTok/Shorts
+# y mucho más rápido de procesar en el VPS (2 CPUs) que 4K.
+MERGED="$BASE/output/merged.mp4"
+
+# Calcular dimensiones de salida 1080p manteniendo aspect ratio (portrait o landscape)
+if [ "$VIDEO_H" -gt "$VIDEO_W" ]; then
+  # Portrait
+  OUT_H=1920
+  OUT_W=$(python3 -c "import math; w=round($VIDEO_W*1920/$VIDEO_H); print(w + w%2)")
+else
+  # Landscape
+  OUT_W=1920
+  OUT_H=$(python3 -c "import math; h=round($VIDEO_H*1920/$VIDEO_W); print(h + h%2)")
+fi
+log "Salida normalizada: ${OUT_W}×${OUT_H} @ 30fps"
+
+# HLG (ARIB-STD-B67) es backward-compatible con SDR — no necesita tone-mapping complejo.
+# Para PQ/HDR10 sí habría que añadir el filtro zscale, pero en la práctica iPhone usa HLG.
+# Usamos ultrafast para minimizar tiempo en el VPS (2 CPUs).
+log "Normalizando vídeo (rotación + 1080p + 30fps) — preset ultrafast..."
+$FFMPEG -i "$VIDEO" \
+  -vf "scale=${OUT_W}:${OUT_H},format=yuv420p" \
+  -r 30 \
+  -c:v libx264 -preset ultrafast -crf 23 \
+  -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
+  -c:a aac -b:a 192k \
+  -metadata:s:v:0 rotate=0 \
+  "$MERGED" -y \
+  2>>"$BASE/projects/$PROJECT/pipeline.log"
+
+# Actualizar dimensiones al tamaño normalizado real
+VIDEO_W=$OUT_W
+VIDEO_H=$OUT_H
+VIDEO_FPS=30
+DURATION=$($FFPROBE -v quiet -show_entries format=duration -of csv=p=0 "$MERGED" | cut -d',' -f1 | tr -d '[:space:]')
+
 # Guardar en status.json para que la API lo devuelva
 node --input-type=module <<EOF
 import fs from 'fs';
@@ -196,7 +254,7 @@ const hasScript = fs.existsSync(scriptFile);
 const scriptData = hasScript ? JSON.parse(fs.readFileSync(scriptFile)) : null;
 fs.writeFileSync(f, JSON.stringify({...s,
   status: 'downloaded',
-  video_path: '$VIDEO',
+  video_path: '$MERGED',
   video_w: $VIDEO_W,
   video_h: $VIDEO_H,
   fps: $VIDEO_FPS,
@@ -208,5 +266,5 @@ fs.writeFileSync(f, JSON.stringify({...s,
 }, null, 2));
 EOF
 
-cp "$VIDEO" "$BASE/output/merged.mp4"
-log "Descarga completa: ${VIDEO_W}x${VIDEO_H} @ ${VIDEO_FPS}fps — ${DURATION}s"
+log "Descarga y normalización completa: ${VIDEO_W}x${VIDEO_H} @ ${VIDEO_FPS}fps — ${DURATION}s"
+# NOTA: No hace cp aquí — merged.mp4 ya fue generado directamente por el ffmpeg de normalización

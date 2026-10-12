@@ -180,7 +180,7 @@ const server = http.createServer(async (req, res) => {
       if (!client_name) return json(res, 400, { error: 'client_name es obligatorio' });
 
       setStatus(project, { status: 'downloading', phase: 'download' });
-      const result = runSync(`${BASE}/scripts/phase-download.sh`, [client_name, project], project, 300000);
+      const result = runSync(`${BASE}/scripts/phase-download.sh`, [client_name, project], project, 660000);
       if (!result.ok) return fail(res, project, 'download', result.error);
 
       const info = getStatus(project);
@@ -277,6 +277,82 @@ const server = http.createServer(async (req, res) => {
       const driveUrl = `hf:${client_name}/Output/${project}_final.mp4`;
       setStatus(project, { status: 'done', drive_output: driveUrl });
       return json(res, 200, { ok: true, drive_output: driveUrl });
+    }
+
+    // ── POST /fix ────────────────────────────────────────────────────────────
+    // Applies a predefined remediation action so N8N can auto-heal failures
+    if (url.pathname === '/fix') {
+      const { action } = body;
+      const COMP_DIR = `${BASE}/output/compositions/${project}`;
+
+      const remediate = {
+        delete_renders: () => {
+          if (!fs.existsSync(COMP_DIR)) return;
+          for (const f of fs.readdirSync(COMP_DIR)) {
+            if (f.endsWith('.mov') || f.endsWith('_frame.png')) {
+              try { fs.unlinkSync(`${COMP_DIR}/${f}`); } catch {}
+            }
+          }
+        },
+        delete_transcript: () => {
+          const a = `${BASE}/output/audio_whisper.mp3`;
+          if (fs.existsSync(a)) fs.unlinkSync(a);
+          const t = `${BASE}/projects/${project}/transcript.json`;
+          if (fs.existsSync(t)) fs.unlinkSync(t);
+        },
+        delete_edited: () => {
+          const f = `${BASE}/output/${project}_edited.mp4`;
+          if (fs.existsSync(f)) fs.unlinkSync(f);
+        },
+        delete_beats: () => {
+          const f = `${BASE}/projects/${project}/beats_with_paths.json`;
+          if (fs.existsSync(f)) fs.unlinkSync(f);
+        },
+        reset_project: () => {
+          execSync(`rm -rf "${COMP_DIR}" && mkdir -p "${COMP_DIR}"`);
+        },
+        kill_ffmpeg: () => {
+          try { execSync('pkill -f ffmpeg 2>/dev/null; true'); } catch {}
+        }
+      };
+
+      if (!remediate[action]) {
+        return json(res, 400, { error: `Acción desconocida: ${action}`, valid: Object.keys(remediate) });
+      }
+
+      try {
+        remediate[action]();
+        setStatus(project, { last_fix: action, fix_at: new Date().toISOString() });
+        return json(res, 200, { ok: true, action, project });
+      } catch (err) {
+        return json(res, 500, { error: `Fix falló: ${err.message}` });
+      }
+    }
+
+    // ── POST /retry-phase ────────────────────────────────────────────────────
+    // Retry a specific phase using state already saved on disk
+    if (url.pathname === '/retry-phase') {
+      const { phase } = body;
+      if (!phase) return json(res, 400, { error: 'phase es obligatorio' });
+
+      const s = getStatus(project) || {};
+      const scriptMap = {
+        download:   { script: `${BASE}/scripts/phase-download.sh`,       args: [s.client_name || '', project], timeout: 660000 },
+        transcribe: { script: `${BASE}/scripts/phase-transcribe.sh`,     args: [project],                      timeout: 600000 },
+        cut:        { script: `${BASE}/scripts/phase-cut.sh`,            args: [project],                      timeout: 300000 },
+        html:       { script: `${BASE}/scripts/phase-generate-html.sh`,  args: [project],                      timeout: 120000 },
+        render:     { script: `${BASE}/scripts/phase-render.sh`,         args: [project],                      timeout: 600000 }
+      };
+
+      const entry = scriptMap[phase];
+      if (!entry) return json(res, 400, { error: `Fase desconocida: ${phase}`, valid: Object.keys(scriptMap) });
+
+      setStatus(project, { status: `retrying_${phase}` });
+      const result = runSync(entry.script, entry.args, project, entry.timeout);
+      if (!result.ok) return fail(res, project, phase, result.error);
+
+      setStatus(project, { status: `${phase}_done` });
+      return json(res, 200, { ok: true, phase, project });
     }
 
     // ── POST /correct ─────────────────────────────────────────────────────────
