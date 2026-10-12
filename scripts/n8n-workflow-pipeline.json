@@ -1,1095 +1,1113 @@
-{
-  "name": "HyperFrames - Pipeline Principal",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "hyperframes-pipeline",
-        "options": {}
-      },
-      "id": "a902f7bf-68a2-4beb-ba3c-cf9ef54a078a",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        23840,
-        4128
-      ],
-      "webhookId": "f9b64ddf-eedc-45ef-980e-1425bfe39165",
-      "notes": "Recibe: { client_name, project, style? }"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/init",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ (() => {\n  const raw = $json.body || $json;\n  const clientSlug = (raw.client_name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-');\n  const date = new Date().toISOString().slice(0, 10);\n  const project = raw.project || (clientSlug + '-' + date);\n  return JSON.stringify({ project, client_name: raw.client_name, style: raw.style || '' });\n})() }}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "4b8f0abd-2f56-4009-9c7c-2203f49caf86",
-      "name": "HTTP - Init",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        24064,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '🎬 Pipeline iniciado\\n📁 Proyecto: ' + $('Webhook').item.json.body.project + '\\n👤 Cliente: ' + $('Webhook').item.json.body.client_name + '\\n\\nDescargando vídeo desde Drive...' }}",
-        "additionalFields": {}
-      },
-      "id": "a2ae6bf5-fa3e-4654-8e7c-2c7de094a3a0",
-      "name": "Telegram - Inicio",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        24288,
-        4128
-      ],
-      "webhookId": "2edfe939-1293-47c2-b2f6-110e1d134434",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/download",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project, client_name: $('Webhook').item.json.body.client_name }) }}",
-        "options": {
-          "timeout": 660000
-        }
-      },
-      "id": "66c6be12-9d32-4616-a938-d128b18ae868",
-      "name": "HTTP - Download",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        24512,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/transcribe",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "da4c5036-dcec-4c4e-9cde-7ab3693410ad",
-      "name": "HTTP - Transcribe",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        24720,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/cut",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": {
-          "timeout": 300000
-        }
-      },
-      "id": "368687e1-22da-4143-b9cb-945c169af3b1",
-      "name": "HTTP - Cut",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        24944,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '✂️ Descarga, transcripción y corte listos.\\n🤖 Planificando motion graphics con IA...' }}",
-        "additionalFields": {}
-      },
-      "id": "e11eab7e-aea1-4b49-9a51-2372162e7b96",
-      "name": "Telegram - Planificando",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        25168,
-        4128
-      ],
-      "webhookId": "0841a6f4-43c7-42d7-8298-d76543cedb04",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const init = $('HTTP - Init').item.json;\nconst dl   = $('HTTP - Download').item.json;\nconst tr   = $('HTTP - Transcribe').item.json;\nconst wb   = $('Webhook').item.json;\n\nconst dur = Math.round(dl.duration || 60);\nconst minBeats = Math.max(8, Math.ceil(dur / 5));\nconst aspectRatio = dl.video_w < dl.video_h ? '9:16' : (dl.video_w / dl.video_h > 1.5 ? '16:9' : '4:3');\n\nconst beatTypes = `\n- titulo-impacto: título grande sin card. Para: intro, énfasis fuerte, frase clave\n- bullet-list: lista escalonada. Para: enumeraciones, pasos, características\n- numero-grande: cifra + label. Para: estadísticas, años experiencia, datos\n- highlight-quote: frase corta de impacto. Para: frases memorables\n- cta-card: llamada a la acción. Para: cuando el hablante pide seguir, enlace\n- lower-third: banda inferior con nombre y cargo. Para: presentación del hablante\n- cierre: beat final con logo + CTA. Para: los últimos 6s`.trim();\n\nconst systemPrompt = [\n  'Eres un editor de vídeo IA especializado en motion graphics para redes sociales.',\n  '',\n  'TAREA: Planifica los beats de motion graphics. Define CUÁNDO y QUÉ mostrar. NO generes HTML todavía.',\n  '',\n  'TIPOS DE BEATS:',\n  beatTypes,\n  '',\n  'POSICIONES (formato 9:16):',\n  '- CARD_TOP: arriba, top 16% mínimo (no solapar UI Instagram)',\n  '- CARD_BOTTOM: abajo, bottom 10%',\n  '- CARD_CENTER: centro',\n  '',\n  'REGLAS:',\n  `- Vídeo dura ${dur}s → MÍNIMO ${minBeats} beats`,\n  '- Nunca más de 3s sin beat durante habla',\n  '- 85%+ del vídeo cubierto',\n  '- Máximo 8s por beat; si el tramo es más largo encadena varios',\n  '- INTRO obligatorio en los primeros 8s',\n  '- CIERRE obligatorio en los últimos 6s',\n  '- Mínimo 0.5s entre el final de un beat y el inicio del siguiente',\n  '- POSICIÓN PREFERIDA: CARD_BOTTOM para la mayoría de beats (no tapar cara del hablante)',\n  '- bullet-list con N ítems: duration MÍNIMO (N × 1.5) + 1.5s → 3 ítems = 6s, 4 ítems = 7.5s',\n  '',\n  'Para cada beat define EXACTAMENTE:',\n  '{ \"id\": \"beat_01\", \"type\": \"titulo-impacto\", \"start\": 2.0, \"duration\": 5.0, \"position\": \"CARD_TOP\", \"content\": { \"title\": \"texto\", \"subtitle\": \"opcional\", \"items\": [\"bullet 1\"], \"number\": \"23\", \"label\": \"AÑOS\", \"cta_text\": \"Enlace en mi perfil\" } }',\n  '',\n  'Usa solo los campos content relevantes para el tipo.',\n  'Responde ÚNICAMENTE con JSON válido: {\"beats\": [...]}'\n].join('\\n');\n\nconst segments = (tr.segments || []).map(s => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}s] ${s.text.trim()}`).join('\\n');\n\nconst userMessage = [\n  `Vídeo: ${dl.video_w}×${dl.video_h} @ ${dl.fps}fps | Aspect ratio: ${aspectRatio} | Duración: ${dur}s`,\n  `MÍNIMO ${minBeats} beats. Cubre TODA la duración.`,\n  '',\n  'TRANSCRIPCIÓN COMPLETA:',\n  tr.text || '',\n  '',\n  'SEGMENTOS CON TIMESTAMPS:',\n  segments,\n  '',\n  'Planifica todos los beats. No dejes huecos > 3s durante habla.'\n].join('\\n');\n\nreturn [{\n  json: {\n    plan_system: systemPrompt,\n    plan_user: userMessage,\n    project: wb.body?.project,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps,\n    duration: dur,\n    aspect_ratio: aspectRatio\n  }\n}];"
-      },
-      "id": "e32d2065-7cdb-43b5-a01f-ce04b6e002a2",
-      "name": "Code - Preparar Prompt",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        25392,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o', response_format: { type: 'json_object' }, max_tokens: 2000, temperature: 0.3, stream: false, messages: [{ role: 'system', content: $json.plan_system }, { role: 'user', content: $json.plan_user }] }) }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "2df2f0cb-5f44-45bc-97d5-e1fda547d63e",
-      "name": "HTTP - OpenAI Beats",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        25600,
-        4128
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YZ479lKZLhPUUmbI",
-          "name": "OpenAi account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "let content = $json.choices?.[0]?.message?.content || '';\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet plan;\ntry { plan = JSON.parse(content); }\ncatch(e) { throw new Error('Plan JSON inválido: ' + content.slice(0, 200)); }\n\nif (!plan.beats || !Array.isArray(plan.beats) || plan.beats.length === 0) {\n  throw new Error('OpenAI no generó beats en el plan: ' + content.slice(0, 200));\n}\n\nconst ctx  = $('Code - Preparar Prompt').item.json;\nconst init = $('HTTP - Init').item.json;\nconst beatsSummary = JSON.stringify(plan.beats, null, 2);\n\nconst styleBlock = init.styles?.client_style || '';\n\nconst sysLines = [\n  'Eres un generador de HTML para motion graphics en vídeos verticales 9:16 de Instagram Reels.',\n  '',\n  'Para cada beat del plan genera HTML COMPLETO, VISUAL e IMPACTANTE.',\n  '',\n  'REGLAS ABSOLUTAS — NUNCA VIOLAR:',\n  `- body { background: transparent !important; width: ${ctx.video_w}px; height: ${ctx.video_h}px; margin: 0; padding: 0; overflow: hidden; }`,\n  '- NUNCA background sólido en el body',\n  '- Google Fonts SIEMPRE en <head>: Space Grotesk 600/700 + Inter 400/500/600',\n  '- animation-fill-mode: forwards en TODAS las animaciones',\n  '- HTML completo: <!DOCTYPE html><html><head>...</head><body>...</body></html>',\n  '',\n  'ESTILO DEL CLIENTE:',\n  styleBlock,\n  '',\n  '=== TAMAÑOS DE FUENTE — MUY IMPORTANTES, NUNCA REDUCIR ===',\n  '- Título principal (titulo-impacto, intro): MÍNIMO 90px, ideal 100-120px (Space Grotesk 700)',\n  '- Número grande (numero-grande): 160-200px con unidad/etiqueta en 48px debajo',\n  '- Subtítulo / tagline: 65-75px (Space Grotesk 600)',\n  '- Bullets / listas (bullet-list): 58-65px por ítem (Inter 600), con ícono/número delante',\n  '- Highlight quote: 70-80px (Space Grotesk 700, cursiva o acento de color)',\n  '- Lower-third / nombre: 55-60px (título) + 38-42px (cargo)',\n  '- CTA / call-to-action: 58-65px bold',\n  '- Cuerpo de apoyo: 38-42px máximo',\n  '',\n  '=== POSICIONAMIENTO — EVITAR TAPAR LA CARA DEL HABLANTE ===',\n  '- CARD_BOTTOM (PREFERIDO para la mayoría): position:absolute; bottom:6%; left:50%; transform:translateX(-50%); width:92%;',\n  '- CARD_TOP (intro, cierre, branding): position:absolute; top:16%; left:50%; transform:translateX(-50%); width:92%;',\n  '- CARD_CENTER (solo cuando hablante no está en centro): position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:88%;',\n  '- FULL_BOTTOM (listas largas): position:absolute; bottom:0; left:0; right:0; min-height:55%; padding:40px 48px;',\n  '',\n  '=== CARDS — FONDO SÓLIDO (sin backdrop-filter, Chrome headless no tiene GPU) ===',\n  'background: rgba(10,15,30,0.88); /* NUNCA backdrop-filter — no funciona en headless */',\n  'border-top: 3px solid #fb923c; border-radius:16px; padding:36px 44px;',\n  'box-shadow: 0 8px 40px rgba(0,0,0,0.75);',\n  'Texto: color:#FFFFFF; text-shadow: 0 2px 8px rgba(0,0,0,0.5);',\n  '',\n  '=== BULLET-LIST — PATRÓN OBLIGATORIO ===',\n  'Siempre incluir un .label encima (ej: \"TAMBIÉN INFLUYE…\", \"TEN EN CUENTA:\"):',\n  '.label { font: 700 30px Space Grotesk; letter-spacing:0.15em; text-transform:uppercase; color:#fb923c; margin-bottom:20px; }',\n  'ul { list-style:none; padding:0; margin:0; }',\n  'li { font:600 62px Inter; color:#f8fafc; padding-left:56px; position:relative; margin-bottom:16px; }',\n  'li::before { content:\"\\u2022\"; color:#fb923c; font-size:72px; position:absolute; left:0; top:-8px; }',\n  '',\n  '=== ANIMACIONES — CON DELAYS PARA REVELADO PROGRESIVO ===',\n  'Duración entrada card: 0.35s cubic-bezier(0.16,1,0.3,1)',\n  'CARD_BOTTOM → slideUp: from translateX(-50%) translateY(30px) opacity:0',\n  'CARD_TOP → slideDown: from translateX(-50%) translateY(-30px) opacity:0',\n  'CARD_CENTER → slamIn: from translate(-50%,-50%) scale(1.08) opacity:0',\n  '',\n  'REVELADO DE BULLETS/ÍTEMS — DELAYS AMPLIOS PARA SINCRONIZAR CON VOZ:',\n  '  ítem 1 → animation-delay: 0.1s',\n  '  ítem 2 → animation-delay: 0.8s',\n  '  ítem 3 → animation-delay: 1.5s',\n  '  ítem 4 → animation-delay: 2.2s',\n  '  ítem 5 → animation-delay: 2.9s',\n  'Animación de cada ítem: slideInLeft 0.3s cubic-bezier(0.16,1,0.3,1) forwards',\n  '  from { opacity:0; transform:translateX(-20px); }',\n  '  to   { opacity:1; transform:translateX(0); }',\n  'IMPORTANTE: el beat debe tener duración ≥ (último delay + 2s) para que todos los ítems sean visibles',\n  '',\n  '=== CONTADORES ANIMADOS (numero-grande) ===',\n  'Usar CSS counter animado con @property --n + counter() si el valor es numérico.',\n  'Ejemplo: @property --n { syntax:\"<integer>\"; inherits:false; initial-value:0; }',\n  '.numero { animation: countUp 1.2s ease-out forwards; }',\n  '@keyframes countUp { from { --n:0; } to { --n: VALOR; } }',\n  '.numero::after { content: counter(n, decimal); }  /* donde n = var(--n) */',\n  '',\n  '=== CIERRE (tipo cierre) ===',\n  'Pantalla completa, fondo semitransparente fuerte (rgba 0.85), logo centrado grande,',\n  'CTA principal en 90px bold, subtext en 50px, sin clips del vídeo de fondo.',\n  '',\n  'Para CADA beat genera: { \"id\": \"beat_01\", \"html_content\": \"<!DOCTYPE html>...\" }',\n  'Responde ÚNICAMENTE con JSON válido: {\"beats\": [...]}'\n];\nconst systemPrompt = sysLines.join('\\n');\n\nconst userMessage = [\n  `Genera el HTML para TODOS estos ${plan.beats.length} beats del vídeo de ${ctx.video_w}×${ctx.video_h}px:`,\n  '',\n  beatsSummary,\n  '',\n  'RECUERDA: texto GRANDE (mínimo 90px títulos, 60px bullets), cards con CARD_BOTTOM preferido, delays 0.8s entre ítems para animación progresiva sincronizada con voz.',\n  'Un HTML completo y visual por cada beat.'\n].join('\\n');\n\nreturn [{\n  json: {\n    html_system: systemPrompt,\n    html_user: userMessage,\n    beats_plan: plan.beats,\n    project: ctx.project,\n    video_w: ctx.video_w,\n    video_h: ctx.video_h,\n    fps: ctx.fps\n  }\n}];"
-      },
-      "id": "edfd596b-7f54-4f8e-a739-93ff0c55c017",
-      "name": "Code - Preparar HTML Prompt",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        26064,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o', response_format: { type: 'json_object' }, max_tokens: 16000, temperature: 0.5, stream: false, messages: [{ role: 'system', content: $json.html_system }, { role: 'user', content: $json.html_user }] }) }}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "a6f5d2f7-b7af-406d-9518-2dc853baf30c",
-      "name": "HTTP - OpenAI HTML",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        26288,
-        4128
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YZ479lKZLhPUUmbI",
-          "name": "OpenAi account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "let content = $json.choices?.[0]?.message?.content || '';\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n\nlet parsed;\ntry { parsed = JSON.parse(content); }\ncatch(e) {\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) { try { parsed = JSON.parse(match[0]); } catch(e2) { throw new Error('HTML JSON inválido: ' + content.slice(0, 300)); } }\n  else { throw new Error('No se encontró JSON en respuesta HTML: ' + content.slice(0, 300)); }\n}\n\nconst ctx = $('Code - Preparar HTML Prompt').item.json;\n\nconst htmlMap = {};\nfor (const b of (parsed.beats || [])) {\n  if (b.id && b.html_content) htmlMap[b.id] = b.html_content;\n}\n\nconst beats = ctx.beats_plan.map(beat => ({\n  ...beat,\n  html_content: htmlMap[beat.id] || null\n})).filter(b => b.html_content);\n\nif (beats.length === 0) {\n  throw new Error('No se generaron HTMLs. Respuesta: ' + content.slice(0, 200));\n}\n\nreturn [{\n  json: {\n    beats,\n    video_w: ctx.video_w,\n    video_h: ctx.video_h,\n    fps: ctx.fps,\n    project: ctx.project\n  }\n}];"
-      },
-      "id": "59b45f13-04e9-4591-b4ed-0a86c300dde0",
-      "name": "Code - Parsear Beats",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        25824,
-        4128
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/html",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $json.project, beats: $json.beats, video_w: $json.video_w, video_h: $json.video_h, fps: $json.fps }) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "e24f6f42-aa18-44cf-9cc8-b1eaa2e321d9",
-      "name": "HTTP - HTML",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        26096,
-        3872
-      ]
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '🎨 ' + $('Code - Parsear Beats').item.json.beats.length + ' animaciones generadas. Renderizando con Puppeteer...\\n⏳ Esto puede tardar varios minutos.' }}",
-        "additionalFields": {}
-      },
-      "id": "4faa34b0-222e-4b99-949e-6f70ed8259c2",
-      "name": "Telegram - Renderizando",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        26288,
-        3872
-      ],
-      "webhookId": "ddffca75-e34c-4580-8862-cb4c9687e2f2",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/render",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $('Webhook').item.json.body.project }) }}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "7ddf204b-58d9-4d8d-b6b0-13bb1182054c",
-      "name": "HTTP - Render",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        26528,
-        3872
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "// Detectar si HTTP - Render devolvió error (500 o timeout)\nconst r = $json;\nconst hasError = r.ok !== true || r.error !== undefined;\nconst errorMsg = typeof r.error === 'string'\n  ? r.error\n  : (r.error?.message || r.message || JSON.stringify(r.error) || 'Error desconocido en render');\nreturn [{ json: { ...r, _has_error: hasError, _error_msg: String(errorMsg).slice(0, 800) } }];"
-      },
-      "id": "bb29d637-c07e-42dc-8921-277077c14536",
-      "name": "Code - Check Render",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        26544,
-        4384
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "id": "render-error-check",
-              "leftValue": "={{ $json._has_error }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "a17cc46c-f947-41f0-8888-f01656052a50",
-      "name": "IF - Render Error",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        26736,
-        4384
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Construir prompt para que OpenAI diagnostique el error de render\nconst ctx = $json;\nconst project = $('Webhook').item.json.body.project;\n\nconst systemPrompt = `You are a diagnostic AI for a video rendering pipeline running on Ubuntu 24.04.\nThe pipeline uses Puppeteer (bundled Chrome), FFmpeg (ProRes 4444), and Node.js.\n\nAVAILABLE FIX ACTIONS — you must return exactly one of these strings (or null):\n- \"delete_renders\" — deletes corrupt .mov overlay files; use when Chrome crashes, ProtocolError, moov atom not found, ENOENT on .mov file\n- \"kill_ffmpeg\" — kills hanging ffmpeg processes; use when timeout / process stuck / ETIMEDOUT\n- \"reset_project\" — full clean of compositions dir; use as last resort for unknown errors\n- null — cannot auto-fix; escalate to human\n\nCOMMON ERRORS → FIX MAPPINGS:\n- \"moov atom not found\" → delete_renders\n- \"ProtocolError\" / \"Target closed\" / Chrome crash → delete_renders\n- \"ETIMEDOUT\" / \"timeout\" / encode hung → kill_ffmpeg (then retry will re-render)\n- \"ENOENT\" → delete_renders\n- Unknown → null\n\nRespond ONLY with valid JSON (no markdown):\n{\"fix_action\": \"...\", \"explanation\": \"...\"}`.trim();\n\nconst userMessage = `RENDER FAILED\\nProject: ${project}\\nError: ${ctx._error_msg}`;\n\nreturn [{ json: {\n  system_prompt: systemPrompt,\n  user_message: userMessage,\n  project,\n  error_msg: ctx._error_msg\n}}];"
-      },
-      "id": "4854d328-86aa-41c3-93be-4272c8b841dc",
-      "name": "Code - Render Diagnose Prompt",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        26896,
-        4256
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', response_format: { type: 'json_object' }, max_tokens: 256, temperature: 0, messages: [{ role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_message }] }) }}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "506cf17a-166e-4934-9d96-1b1f93d2301a",
-      "name": "HTTP - OpenAI Diagnose Render",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        27120,
-        4256
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YZ479lKZLhPUUmbI",
-          "name": "OpenAi account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Parsear la respuesta de OpenAI y extraer la acción de reparación\nlet content = $json.choices?.[0]?.message?.content || '{\"fix_action\":null,\"explanation\":\"parse error\"}';\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(content); }\ncatch(e) { parsed = { fix_action: null, explanation: 'JSON parse error: ' + content.slice(0, 120) }; }\n\nconst diagCtx = $('Code - Render Diagnose Prompt').item.json;\nreturn [{ json: {\n  fix_action: parsed.fix_action || null,\n  explanation: parsed.explanation || '',\n  project: diagCtx.project,\n  error_msg: diagCtx.error_msg,\n  should_fix: !!parsed.fix_action\n}}];"
-      },
-      "id": "2f1fc598-0263-46b0-9d72-be74c65f2ac1",
-      "name": "Code - Parse Render Fix",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        27376,
-        4256
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/fix",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $json.project, action: $json.fix_action || 'delete_renders' }) }}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "f2755ff6-d2c0-4fef-bdeb-b2ef3de81725",
-      "name": "HTTP - Apply Render Fix",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        27648,
-        4256
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {},
-      "id": "2bd1c550-c415-41fa-a46c-6ded5d4f6f38",
-      "name": "Wait 5s",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        27856,
-        4256
-      ],
-      "webhookId": "wait-render-retry"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://187.124.238.94:4000/retry-phase",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $('Code - Parse Render Fix').item.json.project, phase: 'render' }) }}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "b461d236-89ac-4f1e-bf90-61a8647c1829",
-      "name": "HTTP - Retry Render",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        28096,
-        4256
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const r = $json;\nconst hasError = r.ok !== true || r.error !== undefined;\nconst errorMsg = typeof r.error === 'string' ? r.error : (r.error?.message || 'Retry render failed');\nconst fixCtx = $('Code - Parse Render Fix').item.json;\nreturn [{ json: { ...r, _has_error: hasError, _error_msg: errorMsg, explanation: fixCtx.explanation, project: fixCtx.project }}];"
-      },
-      "id": "62b3cc3f-aeb0-4b05-b596-7bc4f905bc19",
-      "name": "Code - Check Retry Render",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        28368,
-        4256
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "id": "retry-render-ok",
-              "leftValue": "={{ $json._has_error }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "aa034555-de65-48ed-ac50-15a152e99885",
-      "name": "IF - Retry Render Error",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        28592,
-        4256
-      ]
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '🚨 <b>RENDER FALLIDO — intervención necesaria</b>\\n📁 Proyecto: <code>' + $json.project + '</code>\\n\\n❌ El auto-fix no resolvió el problema (2 intentos).\\n\\n🔍 Diagnóstico: ' + ($json.explanation || 'sin diagnóstico') + '\\n\\n💬 Error: <pre>' + String($json._error_msg || '').slice(0,300) + '</pre>' }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
-      },
-      "id": "aafb6977-d74b-418f-9d58-d47b8d2b739e",
-      "name": "Telegram - Render Escalación",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        28800,
-        4240
-      ],
-      "webhookId": "1a622b82-07c8-41df-961c-094872752b3e",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '✅ Auto-fix aplicado y render completado.\\n🔧 Fix: ' + $('Code - Parse Render Fix').item.json.fix_action + '\\n📁 Proyecto: ' + $('Code - Parse Render Fix').item.json.project }}",
-        "additionalFields": {}
-      },
-      "id": "228bdab5-0238-4ee9-bafc-d2495fe4cec3",
-      "name": "Telegram - Render Recuperado",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        28608,
-        4608
-      ],
-      "webhookId": "a967ce07-d756-4716-91fb-9507ac75bd3f",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "sendPhoto",
-        "chatId": "5126250705",
-        "binaryData": true,
-        "additionalFields": {
-          "caption": "Frame 1 — preview del render"
-        }
-      },
-      "id": "7c780120-ff0f-4ba6-af07-730e7686fc43",
-      "name": "Telegram - Preview 1",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        27280,
-        4592
-      ],
-      "webhookId": "abe88cad-73ed-4d0c-a513-266f3f0b7e1d",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "sendPhoto",
-        "chatId": "5126250705",
-        "binaryData": true,
-        "additionalFields": {
-          "caption": "Frame 2 — preview del render"
-        }
-      },
-      "id": "713b91f0-6d81-4797-acf8-b576d93ca07d",
-      "name": "Telegram - Preview 2",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        27680,
-        4592
-      ],
-      "webhookId": "b2c259ed-c9a5-4285-bca8-ad12934ab0c8",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "sendPhoto",
-        "chatId": "5126250705",
-        "binaryData": true,
-        "additionalFields": {
-          "caption": "Frame 3 — preview del render"
-        }
-      },
-      "id": "a82ac661-d9bc-4307-ad0a-de0bca69de1b",
-      "name": "Telegram - Preview 3",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        28064,
-        4592
-      ],
-      "webhookId": "963917bf-4c08-4975-b370-3675e034fa32",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "5126250705",
-        "text": "={{ '✅ Render completo — Proyecto: <b>' + $('Webhook').item.json.body.project + '</b>\\n\\nResponde <b>OK</b> para subir a Drive, o describe los cambios que quieres.' }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
-      },
-      "id": "0188bad5-bcfb-42cc-87d9-cf50266c32a7",
-      "name": "Telegram - Pedir Feedback",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        28240,
-        4592
-      ],
-      "webhookId": "5180a3a7-f9a6-4507-85be-5198ed88fe85",
-      "credentials": {
-        "telegramApi": {
-          "id": "YvmgWQMqVWetyrBd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "url": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/1' }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          }
-        }
-      },
-      "id": "a93d7363-2c97-44f8-89c1-6225db4ac418",
-      "name": "HTTP - Get Preview 1",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        27088,
-        4592
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/2' }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          }
-        }
-      },
-      "id": "87550596-442d-4838-8485-aaf2804418d0",
-      "name": "HTTP - Get Preview 2",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        27488,
-        4592
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ 'http://187.124.238.94:4000/preview/' + $('Webhook').item.json.body.project + '/3' }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          }
-        }
-      },
-      "id": "b155a437-2bdb-431c-8fc0-59b5ea6a4d0f",
-      "name": "HTTP - Get Preview 3",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        27872,
-        4592
-      ]
-    }
-  ],
-  "pinData": {},
-  "connections": {
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Init",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Init": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Inicio",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Inicio": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Download",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Download": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Transcribe",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Transcribe": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Cut",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Cut": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Planificando",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Planificando": {
-      "main": [
-        [
-          {
-            "node": "Code - Preparar Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Preparar Prompt": {
-      "main": [
-        [
-          {
-            "node": "HTTP - OpenAI Beats",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - OpenAI Beats": {
-      "main": [
-        [
-          {
-            "node": "Code - Preparar HTML Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Parsear Beats": {
-      "main": [
-        [
-          {
-            "node": "HTTP - HTML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - HTML": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Renderizando",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Renderizando": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Render": {
-      "main": [
-        [
-          {
-            "node": "Code - Check Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Check Render": {
-      "main": [
-        [
-          {
-            "node": "IF - Render Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF - Render Error": {
-      "main": [
-        [
-          {
-            "node": "Code - Render Diagnose Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "HTTP - Get Preview 1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Render Diagnose Prompt": {
-      "main": [
-        [
-          {
-            "node": "HTTP - OpenAI Diagnose Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - OpenAI Diagnose Render": {
-      "main": [
-        [
-          {
-            "node": "Code - Parse Render Fix",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Parse Render Fix": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Apply Render Fix",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Apply Render Fix": {
-      "main": [
-        [
-          {
-            "node": "Wait 5s",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait 5s": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Retry Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Retry Render": {
-      "main": [
-        [
-          {
-            "node": "Code - Check Retry Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Check Retry Render": {
-      "main": [
-        [
-          {
-            "node": "IF - Retry Render Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF - Retry Render Error": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Render Escalación",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Telegram - Render Recuperado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Render Recuperado": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Get Preview 1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Preview 1": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Get Preview 2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Preview 2": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Get Preview 3",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Preview 3": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Pedir Feedback",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Preparar HTML Prompt": {
-      "main": [
-        [
-          {
-            "node": "HTTP - OpenAI HTML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - OpenAI HTML": {
-      "main": [
-        [
-          {
-            "node": "Code - Parsear Beats",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Get Preview 1": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Preview 1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Get Preview 2": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Preview 2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Get Preview 3": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Preview 3",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "active": true,
-  "settings": {
-    "executionOrder": "v1",
-    "binaryMode": "separate"
-  },
-  "versionId": "ba4cf47b-c947-4f86-9fd8-7116292ef610",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "ca909d39e8044184bf800b77fc3e957ed8d5a4c580087639692415cc2c770b70"
-  },
-  "id": "dF120hn4ZDbtLyIB",
-  "tags": [
-    {
-      "updatedAt": "2026-09-15T03:17:22.956Z",
-      "createdAt": "2026-09-15T03:17:22.956Z",
-      "id": "V91bcZv3TK25LMBB",
-      "name": "Hyperframes"
-    }
-  ]
+﻿{
+    "name":  "HyperFrames - Pipeline Principal",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "hyperframes-pipeline",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a902f7bf-68a2-4beb-ba3c-cf9ef54a078a",
+                      "name":  "Webhook",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       23840,
+                                       4128
+                                   ],
+                      "webhookId":  "f9b64ddf-eedc-45ef-980e-1425bfe39165",
+                      "notes":  "Recibe: { client_name, project, style? }"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/init",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ (() =\u003e {\n  const raw = $json.body || $json;\n  const clientSlug = (raw.client_name || \u0027project\u0027).toLowerCase().replace(/[^a-z0-9]+/g, \u0027-\u0027);\n  const date = new Date().toISOString().slice(0, 10);\n  const project = raw.project || (clientSlug + \u0027-\u0027 + date);\n  return JSON.stringify({ project, client_name: raw.client_name, style: raw.style || \u0027\u0027 });\n})() }}",
+                                         "options":  {
+                                                         "timeout":  30000
+                                                     }
+                                     },
+                      "id":  "4b8f0abd-2f56-4009-9c7c-2203f49caf86",
+                      "name":  "HTTP - Init",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       24064,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027🎬 Pipeline iniciado\\n📁 Proyecto: \u0027 + $(\u0027Webhook\u0027).item.json.body.project + \u0027\\n👤 Cliente: \u0027 + $(\u0027Webhook\u0027).item.json.body.client_name + \u0027\\n\\nDescargando vídeo desde Drive...\u0027 }}",
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "id":  "a2ae6bf5-fa3e-4654-8e7c-2c7de094a3a0",
+                      "name":  "Telegram - Inicio",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       24288,
+                                       4128
+                                   ],
+                      "webhookId":  "2edfe939-1293-47c2-b2f6-110e1d134434",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/download",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $(\u0027Webhook\u0027).item.json.body.project, client_name: $(\u0027Webhook\u0027).item.json.body.client_name }) }}",
+                                         "options":  {
+                                                         "timeout":  660000
+                                                     }
+                                     },
+                      "id":  "66c6be12-9d32-4616-a938-d128b18ae868",
+                      "name":  "HTTP - Download",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       24512,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/transcribe",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $(\u0027Webhook\u0027).item.json.body.project }) }}",
+                                         "options":  {
+                                                         "timeout":  600000
+                                                     }
+                                     },
+                      "id":  "da4c5036-dcec-4c4e-9cde-7ab3693410ad",
+                      "name":  "HTTP - Transcribe",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       24720,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/cut",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $(\u0027Webhook\u0027).item.json.body.project }) }}",
+                                         "options":  {
+                                                         "timeout":  300000
+                                                     }
+                                     },
+                      "id":  "368687e1-22da-4143-b9cb-945c169af3b1",
+                      "name":  "HTTP - Cut",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       24944,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027✂️ Descarga, transcripción y corte listos.\\n🤖 Planificando motion graphics con IA...\u0027 }}",
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "id":  "e11eab7e-aea1-4b49-9a51-2372162e7b96",
+                      "name":  "Telegram - Planificando",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       25168,
+                                       4128
+                                   ],
+                      "webhookId":  "0841a6f4-43c7-42d7-8298-d76543cedb04",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const init = $(\u0027HTTP - Init\u0027).item.json;\nconst dl   = $(\u0027HTTP - Download\u0027).item.json;\nconst tr   = $(\u0027HTTP - Transcribe\u0027).item.json;\nconst wb   = $(\u0027Webhook\u0027).item.json;\n\nconst dur = Math.round(dl.duration || 60);\nconst minBeats = Math.max(8, Math.ceil(dur / 5));\nconst aspectRatio = dl.video_w \u003c dl.video_h ? \u00279:16\u0027 : (dl.video_w / dl.video_h \u003e 1.5 ? \u002716:9\u0027 : \u00274:3\u0027);\n\nconst beatTypes = `\n- titulo-impacto: título grande sin card. Para: intro, énfasis fuerte, frase clave\n- bullet-list: lista escalonada. Para: enumeraciones, pasos, características\n- numero-grande: cifra + label. Para: estadísticas, años experiencia, datos\n- highlight-quote: frase corta de impacto. Para: frases memorables\n- cta-card: llamada a la acción. Para: cuando el hablante pide seguir, enlace\n- lower-third: banda inferior con nombre y cargo. Para: presentación del hablante\n- cierre: beat final con logo + CTA. Para: los últimos 6s`.trim();\n\nconst systemPrompt = [\n  \u0027Eres un editor de vídeo IA especializado en motion graphics para redes sociales.\u0027,\n  \u0027\u0027,\n  \u0027TAREA: Planifica los beats de motion graphics. Define CUÁNDO y QUÉ mostrar. NO generes HTML todavía.\u0027,\n  \u0027\u0027,\n  \u0027TIPOS DE BEATS:\u0027,\n  beatTypes,\n  \u0027\u0027,\n  \u0027POSICIONES (formato 9:16):\u0027,\n  \u0027- CARD_TOP: arriba, top 16% mínimo (no solapar UI Instagram)\u0027,\n  \u0027- CARD_BOTTOM: abajo, bottom 10%\u0027,\n  \u0027- CARD_CENTER: centro\u0027,\n  \u0027\u0027,\n  \u0027REGLAS:\u0027,\n  `- Vídeo dura ${dur}s → MÍNIMO ${minBeats} beats`,\n  \u0027- Nunca más de 3s sin beat durante habla\u0027,\n  \u0027- 85%+ del vídeo cubierto\u0027,\n  \u0027- Máximo 8s por beat; si el tramo es más largo encadena varios\u0027,\n  \u0027- INTRO obligatorio en los primeros 8s\u0027,\n  \u0027- CIERRE obligatorio en los últimos 6s\u0027,\n  \u0027- Mínimo 0.5s entre el final de un beat y el inicio del siguiente\u0027,\n  \u0027- POSICIÓN PREFERIDA: CARD_BOTTOM para la mayoría de beats (no tapar cara del hablante)\u0027,\n  \u0027- bullet-list con N ítems: duration MÍNIMO (N × 1.5) + 1.5s → 3 ítems = 6s, 4 ítems = 7.5s\u0027,\n  \u0027\u0027,\n  \u0027Para cada beat define EXACTAMENTE:\u0027,\n  \u0027{ \"id\": \"beat_01\", \"type\": \"titulo-impacto\", \"start\": 2.0, \"duration\": 5.0, \"position\": \"CARD_TOP\", \"content\": { \"title\": \"texto\", \"subtitle\": \"opcional\", \"items\": [\"bullet 1\"], \"number\": \"23\", \"label\": \"AÑOS\", \"cta_text\": \"Enlace en mi perfil\" } }\u0027,\n  \u0027\u0027,\n  \u0027Usa solo los campos content relevantes para el tipo.\u0027,\n  \u0027Responde ÚNICAMENTE con JSON válido: {\"beats\": [...]}\u0027\n].join(\u0027\\n\u0027);\n\nconst segments = (tr.segments || []).map(s =\u003e `[${s.start.toFixed(1)}-${s.end.toFixed(1)}s] ${s.text.trim()}`).join(\u0027\\n\u0027);\n\nconst userMessage = [\n  `Vídeo: ${dl.video_w}×${dl.video_h} @ ${dl.fps}fps | Aspect ratio: ${aspectRatio} | Duración: ${dur}s`,\n  `MÍNIMO ${minBeats} beats. Cubre TODA la duración.`,\n  \u0027\u0027,\n  \u0027TRANSCRIPCIÓN COMPLETA:\u0027,\n  tr.text || \u0027\u0027,\n  \u0027\u0027,\n  \u0027SEGMENTOS CON TIMESTAMPS:\u0027,\n  segments,\n  \u0027\u0027,\n  \u0027Planifica todos los beats. No dejes huecos \u003e 3s durante habla.\u0027\n].join(\u0027\\n\u0027);\n\nreturn [{\n  json: {\n    plan_system: systemPrompt,\n    plan_user: userMessage,\n    project: wb.body?.project,\n    video_w: dl.video_w,\n    video_h: dl.video_h,\n    fps: dl.fps,\n    duration: dur,\n    aspect_ratio: aspectRatio\n  }\n}];"
+                                     },
+                      "id":  "e32d2065-7cdb-43b5-a01f-ce04b6e002a2",
+                      "name":  "Code - Preparar Prompt",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       25392,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.openai.com/v1/chat/completions",
+                                         "authentication":  "predefinedCredentialType",
+                                         "nodeCredentialType":  "openAiApi",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ model: \u0027gpt-4o\u0027, response_format: { type: \u0027json_object\u0027 }, max_tokens: 2000, temperature: 0.3, stream: false, messages: [{ role: \u0027system\u0027, content: $json.plan_system }, { role: \u0027user\u0027, content: $json.plan_user }] }) }}",
+                                         "options":  {
+                                                         "timeout":  60000
+                                                     }
+                                     },
+                      "id":  "2df2f0cb-5f44-45bc-97d5-e1fda547d63e",
+                      "name":  "HTTP - OpenAI Beats",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       25600,
+                                       4128
+                                   ],
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "YZ479lKZLhPUUmbI",
+                                                            "name":  "OpenAi account"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "let content = $json.choices?.[0]?.message?.content || \u0027\u0027;\ncontent = content.replace(/```json\\s*/g, \u0027\u0027).replace(/```\\s*/g, \u0027\u0027).trim();\n\nlet plan;\ntry { plan = JSON.parse(content); }\ncatch(e) { throw new Error(\u0027Plan JSON invalido: \u0027 + content.slice(0, 200)); }\n\nif (!plan.beats || !Array.isArray(plan.beats) || plan.beats.length === 0) {\n  throw new Error(\u0027OpenAI no genero beats: \u0027 + content.slice(0, 200));\n}\n\nconst ctx = $(\u0027Code - Preparar Prompt\u0027).item.json;\n\nconst systemPrompt = [\n  \u0027Eres un generador de HTML para motion graphics en Instagram Reels verticales (9:16).\u0027,\n  \u0027Genera HTML COMPLETO, VISUAL e IMPACTANTE para cada beat. El resultado debe verse PROFESIONAL.\u0027,\n  \u0027\u0027,\n  \u0027=== REGLAS ABSOLUTAS ===\u0027,\n  \u0027body { background: transparent !important; width: \u0027 + ctx.video_w + \u0027px; height: \u0027 + ctx.video_h + \u0027px; margin:0; padding:0; overflow:hidden; }\u0027,\n  \u0027NUNCA background solido en body. NUNCA backdrop-filter (no funciona en Chrome headless).\u0027,\n  \u0027SIEMPRE incluir en \u003chead\u003e: \u003clink href=\"https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700\u0026family=Inter:wght@400;500;600\u0026display=swap\" rel=\"stylesheet\"\u003e\u0027,\n  \u0027animation-fill-mode: forwards en TODAS las animaciones.\u0027,\n  \u0027\u0027,\n  \u0027=== IDENTIDAD VISUAL DM SEGUROS ===\u0027,\n  \u0027\u0027,\n  \u0027COLORES:\u0027,\n  \u0027  Naranja principal: #fb923c  (bordes, titulos, bullets, CTAs)\u0027,\n  \u0027  Fondo card: rgba(10,15,30,0.88)  (SIEMPRE este valor)\u0027,\n  \u0027  Texto principal: #f8fafc\u0027,\n  \u0027  Texto secundario: #94a3b8\u0027,\n  \u0027\u0027,\n  \u0027FUENTES:\u0027,\n  \u0027  Titulos y numeros: Space Grotesk 700\u0027,\n  \u0027  Cuerpo y listas: Inter 600\u0027,\n  \u0027\u0027,\n  \u0027TAMANOS DE FUENTE (formato 720x1280px):\u0027,\n  \u0027  Titulo principal: 100px Space Grotesk 700 color #fb923c\u0027,\n  \u0027  Subtitulo: 72px Space Grotesk 600 color #f8fafc\u0027,\n  \u0027  Numero grande: 180px Space Grotesk 700 color #fb923c\u0027,\n  \u0027  Bullets/lista: 62px Inter 600 color #f8fafc\u0027,\n  \u0027  Label de lista: 30px Space Grotesk 700 uppercase letter-spacing:0.15em color #fb923c margin-bottom:20px\u0027,\n  \u0027  CTA: 62px bold color #fb923c\u0027,\n  \u0027\u0027,\n  \u0027CSS DE CARDS (OBLIGATORIO):\u0027,\n  \u0027  background: rgba(10,15,30,0.88)\u0027,\n  \u0027  border-top: 3px solid #fb923c\u0027,\n  \u0027  border-radius: 16px\u0027,\n  \u0027  padding: 36px 44px\u0027,\n  \u0027  box-shadow: 0 8px 40px rgba(0,0,0,0.75)\u0027,\n  \u0027  color: #f8fafc\u0027,\n  \u0027\u0027,\n  \u0027BULLET-LIST (patron obligatorio):\u0027,\n  \u0027  - .label: Space Grotesk 700 30px, uppercase, letter-spacing 0.15em, color #fb923c, margin-bottom 20px\u0027,\n  \u0027  - ul: list-style none, padding 0, margin 0\u0027,\n  \u0027  - li: Inter 600 62px, color #f8fafc, padding-left 56px, position relative, margin-bottom 16px\u0027,\n  \u0027  - li::before: content de un punto/bullet, color #fb923c, font-size 72px, position absolute, left 0, top -8px, line-height 1\u0027,\n  \u0027  - Cada li tiene animacion popIn con delays: li1=0.1s li2=0.8s li3=1.5s li4=2.2s\u0027,\n  \u0027\u0027,\n  \u0027ANIMACIONES (definir con @keyframes):\u0027,\n  \u0027  slideDown: from{opacity:0;transform:translateX(-50%) translateY(-22px) scale(0.97)} to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}\u0027,\n  \u0027  slideUp:   from{opacity:0;transform:translateX(-50%) translateY(24px) scale(0.97)} to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}\u0027,\n  \u0027  slamIn:    from{opacity:0;transform:translate(-50%,-50%) scale(1.10)} to{opacity:1;transform:translate(-50%,-50%) scale(1)}\u0027,\n  \u0027  popIn:     from{opacity:0;transform:scale(0.78) translateX(-10px)} to{opacity:1;transform:scale(1) translateX(0)}\u0027,\n  \u0027  Duracion: 0.35s cubic-bezier(0.16,1,0.3,1) forwards\u0027,\n  \u0027\u0027,\n  \u0027POSICIONES (usar position:absolute):\u0027,\n  \u0027  CARD_BOTTOM (PREFERIDO): bottom:10%; left:50%; transform:translateX(-50%); width:88%\u0027,\n  \u0027  CARD_TOP (intro/cierre/branding): top:16%; left:50%; transform:translateX(-50%); width:88%\u0027,\n  \u0027  CARD_CENTER: top:50%; left:50%; transform:translate(-50%,-50%); width:82%\u0027,\n  \u0027\u0027,\n  \u0027=== COMO RENDERIZAR CADA TIPO DE BEAT ===\u0027,\n  \u0027titulo-impacto: card en CARD_TOP, titulo 100px naranja Space Grotesk, subtitulo 70px blanco, slideDown 0.35s\u0027,\n  \u0027bullet-list: card en CARD_BOTTOM border-left:4px naranja, .label naranja uppercase, items 62px con bullet naranja popIn escalonado\u0027,\n  \u0027numero-grande: CARD_CENTER, cifra 180px naranja, label 48px blanco debajo, slamIn\u0027,\n  \u0027highlight-quote: CARD_CENTER, frase 75px Space Grotesk, palabra clave naranja, resto blanco, slamIn\u0027,\n  \u0027lower-third: franja inferior (bottom:0 width:100% min-height:200px), bg rgba(10,15,30,0.88), nombre 58px, cargo 40px gris, slideUp\u0027,\n  \u0027cta-card: CARD_BOTTOM, texto CTA 62px naranja bold, subtext 42px blanco, slideUp\u0027,\n  \u0027cierre: pantalla completa (position:fixed top:0 left:0 width:100% height:100%), fondo rgba(10,15,30,0.92), logo img centrado 40% ancho, CTA 90px naranja, subtext 50px blanco, slamIn\u0027,\n  \u0027\u0027,\n  \u0027Para CADA beat: { \"id\": \"beat_01\", \"html_content\": \"\u003c!DOCTYPE html\u003e...\" }\u0027,\n  \u0027Responde UNICAMENTE con JSON valido: {\"beats\": [...]}\u0027\n].join(\u0027\\n\u0027);\n\nconst userMessage = [\n  \u0027Genera HTML para TODOS los \u0027 + plan.beats.length + \u0027 beats del video \u0027 + ctx.video_w + \u0027x\u0027 + ctx.video_h + \u0027px:\u0027,\n  \u0027\u0027,\n  JSON.stringify(plan.beats, null, 2),\n  \u0027\u0027,\n  \u0027CHECKLIST obligatorio por beat:\u0027,\n  \u0027- Card con background rgba(10,15,30,0.88) + borde naranja #fb923c\u0027,\n  \u0027- Texto GRANDE: titulos \u003e= 100px, bullets \u003e= 62px (Space Grotesk / Inter)\u0027,\n  \u0027- Animacion de entrada con animation-fill-mode:forwards\u0027,\n  \u0027- Delays escalonados en listas (0.7s entre items)\u0027,\n  \u0027- Posicion CARD_BOTTOM preferida para no tapar la cara\u0027,\n  \u0027Un HTML COMPLETO y VISUALMENTE RICO por beat.\u0027\n].join(\u0027\\n\u0027);\n\nreturn [{\n  json: {\n    html_system: systemPrompt,\n    html_user: userMessage,\n    beats_plan: plan.beats,\n    project: ctx.project,\n    video_w: ctx.video_w,\n    video_h: ctx.video_h,\n    fps: ctx.fps\n  }\n}];"
+                                     },
+                      "id":  "edfd596b-7f54-4f8e-a739-93ff0c55c017",
+                      "name":  "Code - Preparar HTML Prompt",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       26064,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.openai.com/v1/chat/completions",
+                                         "authentication":  "predefinedCredentialType",
+                                         "nodeCredentialType":  "openAiApi",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ model: \u0027gpt-4o\u0027, response_format: { type: \u0027json_object\u0027 }, max_tokens: 16000, temperature: 0.5, stream: false, messages: [{ role: \u0027system\u0027, content: $json.html_system }, { role: \u0027user\u0027, content: $json.html_user }] }) }}",
+                                         "options":  {
+                                                         "timeout":  600000
+                                                     }
+                                     },
+                      "id":  "a6f5d2f7-b7af-406d-9518-2dc853baf30c",
+                      "name":  "HTTP - OpenAI HTML",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       26288,
+                                       4128
+                                   ],
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "YZ479lKZLhPUUmbI",
+                                                            "name":  "OpenAi account"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "let content = $json.choices?.[0]?.message?.content || \u0027\u0027;\ncontent = content.replace(/```json\\s*/g, \u0027\u0027).replace(/```\\s*/g, \u0027\u0027).trim();\n\nlet parsed;\ntry { parsed = JSON.parse(content); }\ncatch(e) {\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) { try { parsed = JSON.parse(match[0]); } catch(e2) { throw new Error(\u0027HTML JSON inválido: \u0027 + content.slice(0, 300)); } }\n  else { throw new Error(\u0027No se encontró JSON en respuesta HTML: \u0027 + content.slice(0, 300)); }\n}\n\nconst ctx = $(\u0027Code - Preparar HTML Prompt\u0027).item.json;\n\nconst htmlMap = {};\nfor (const b of (parsed.beats || [])) {\n  if (b.id \u0026\u0026 b.html_content) htmlMap[b.id] = b.html_content;\n}\n\nconst beats = ctx.beats_plan.map(beat =\u003e ({\n  ...beat,\n  html_content: htmlMap[beat.id] || null\n})).filter(b =\u003e b.html_content);\n\nif (beats.length === 0) {\n  throw new Error(\u0027No se generaron HTMLs. Respuesta: \u0027 + content.slice(0, 200));\n}\n\nreturn [{\n  json: {\n    beats,\n    video_w: ctx.video_w,\n    video_h: ctx.video_h,\n    fps: ctx.fps,\n    project: ctx.project\n  }\n}];"
+                                     },
+                      "id":  "59b45f13-04e9-4591-b4ed-0a86c300dde0",
+                      "name":  "Code - Parsear Beats",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       25824,
+                                       4128
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/html",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $json.project, beats: $json.beats, video_w: $json.video_w, video_h: $json.video_h, fps: $json.fps }) }}",
+                                         "options":  {
+                                                         "timeout":  120000
+                                                     }
+                                     },
+                      "id":  "e24f6f42-aa18-44cf-9cc8-b1eaa2e321d9",
+                      "name":  "HTTP - HTML",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       26096,
+                                       3872
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027🎨 \u0027 + $(\u0027Code - Parsear Beats\u0027).item.json.beats.length + \u0027 animaciones generadas. Renderizando con Puppeteer...\\n⏳ Esto puede tardar varios minutos.\u0027 }}",
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "id":  "4faa34b0-222e-4b99-949e-6f70ed8259c2",
+                      "name":  "Telegram - Renderizando",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       26288,
+                                       3872
+                                   ],
+                      "webhookId":  "ddffca75-e34c-4580-8862-cb4c9687e2f2",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/render",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $(\u0027Webhook\u0027).item.json.body.project }) }}",
+                                         "options":  {
+                                                         "timeout":  600000
+                                                     }
+                                     },
+                      "id":  "7ddf204b-58d9-4d8d-b6b0-13bb1182054c",
+                      "name":  "HTTP - Render",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       26528,
+                                       3872
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Detectar si HTTP - Render devolvió error (500 o timeout)\nconst r = $json;\nconst hasError = r.ok !== true || r.error !== undefined;\nconst errorMsg = typeof r.error === \u0027string\u0027\n  ? r.error\n  : (r.error?.message || r.message || JSON.stringify(r.error) || \u0027Error desconocido en render\u0027);\nreturn [{ json: { ...r, _has_error: hasError, _error_msg: String(errorMsg).slice(0, 800) } }];"
+                                     },
+                      "id":  "bb29d637-c07e-42dc-8921-277077c14536",
+                      "name":  "Code - Check Render",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       26544,
+                                       4384
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose"
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "render-error-check",
+                                                                                   "leftValue":  "={{ $json._has_error }}",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "true"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a17cc46c-f947-41f0-8888-f01656052a50",
+                      "name":  "IF - Render Error",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       26736,
+                                       4384
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Construir prompt para que OpenAI diagnostique el error de render\nconst ctx = $json;\nconst project = $(\u0027Webhook\u0027).item.json.body.project;\n\nconst systemPrompt = `You are a diagnostic AI for a video rendering pipeline running on Ubuntu 24.04.\nThe pipeline uses Puppeteer (bundled Chrome), FFmpeg (ProRes 4444), and Node.js.\n\nAVAILABLE FIX ACTIONS — you must return exactly one of these strings (or null):\n- \"delete_renders\" — deletes corrupt .mov overlay files; use when Chrome crashes, ProtocolError, moov atom not found, ENOENT on .mov file\n- \"kill_ffmpeg\" — kills hanging ffmpeg processes; use when timeout / process stuck / ETIMEDOUT\n- \"reset_project\" — full clean of compositions dir; use as last resort for unknown errors\n- null — cannot auto-fix; escalate to human\n\nCOMMON ERRORS → FIX MAPPINGS:\n- \"moov atom not found\" → delete_renders\n- \"ProtocolError\" / \"Target closed\" / Chrome crash → delete_renders\n- \"ETIMEDOUT\" / \"timeout\" / encode hung → kill_ffmpeg (then retry will re-render)\n- \"ENOENT\" → delete_renders\n- Unknown → null\n\nRespond ONLY with valid JSON (no markdown):\n{\"fix_action\": \"...\", \"explanation\": \"...\"}`.trim();\n\nconst userMessage = `RENDER FAILED\\nProject: ${project}\\nError: ${ctx._error_msg}`;\n\nreturn [{ json: {\n  system_prompt: systemPrompt,\n  user_message: userMessage,\n  project,\n  error_msg: ctx._error_msg\n}}];"
+                                     },
+                      "id":  "4854d328-86aa-41c3-93be-4272c8b841dc",
+                      "name":  "Code - Render Diagnose Prompt",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       26896,
+                                       4256
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.openai.com/v1/chat/completions",
+                                         "authentication":  "predefinedCredentialType",
+                                         "nodeCredentialType":  "openAiApi",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ model: \u0027gpt-4o-mini\u0027, response_format: { type: \u0027json_object\u0027 }, max_tokens: 256, temperature: 0, messages: [{ role: \u0027system\u0027, content: $json.system_prompt }, { role: \u0027user\u0027, content: $json.user_message }] }) }}",
+                                         "options":  {
+                                                         "timeout":  30000
+                                                     }
+                                     },
+                      "id":  "506cf17a-166e-4934-9d96-1b1f93d2301a",
+                      "name":  "HTTP - OpenAI Diagnose Render",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       27120,
+                                       4256
+                                   ],
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "YZ479lKZLhPUUmbI",
+                                                            "name":  "OpenAi account"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Parsear la respuesta de OpenAI y extraer la acción de reparación\nlet content = $json.choices?.[0]?.message?.content || \u0027{\"fix_action\":null,\"explanation\":\"parse error\"}\u0027;\ncontent = content.replace(/```json\\s*/g, \u0027\u0027).replace(/```\\s*/g, \u0027\u0027).trim();\nlet parsed;\ntry { parsed = JSON.parse(content); }\ncatch(e) { parsed = { fix_action: null, explanation: \u0027JSON parse error: \u0027 + content.slice(0, 120) }; }\n\nconst diagCtx = $(\u0027Code - Render Diagnose Prompt\u0027).item.json;\nreturn [{ json: {\n  fix_action: parsed.fix_action || null,\n  explanation: parsed.explanation || \u0027\u0027,\n  project: diagCtx.project,\n  error_msg: diagCtx.error_msg,\n  should_fix: !!parsed.fix_action\n}}];"
+                                     },
+                      "id":  "2f1fc598-0263-46b0-9d72-be74c65f2ac1",
+                      "name":  "Code - Parse Render Fix",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       27376,
+                                       4256
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/fix",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $json.project, action: $json.fix_action || \u0027delete_renders\u0027 }) }}",
+                                         "options":  {
+                                                         "timeout":  30000
+                                                     }
+                                     },
+                      "id":  "f2755ff6-d2c0-4fef-bdeb-b2ef3de81725",
+                      "name":  "HTTP - Apply Render Fix",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       27648,
+                                       4256
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "2bd1c550-c415-41fa-a46c-6ded5d4f6f38",
+                      "name":  "Wait 5s",
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       27856,
+                                       4256
+                                   ],
+                      "webhookId":  "wait-render-retry"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "http://187.124.238.94:4000/retry-phase",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ project: $(\u0027Code - Parse Render Fix\u0027).item.json.project, phase: \u0027render\u0027 }) }}",
+                                         "options":  {
+                                                         "timeout":  600000
+                                                     }
+                                     },
+                      "id":  "b461d236-89ac-4f1e-bf90-61a8647c1829",
+                      "name":  "HTTP - Retry Render",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       28096,
+                                       4256
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const r = $json;\nconst hasError = r.ok !== true || r.error !== undefined;\nconst errorMsg = typeof r.error === \u0027string\u0027 ? r.error : (r.error?.message || \u0027Retry render failed\u0027);\nconst fixCtx = $(\u0027Code - Parse Render Fix\u0027).item.json;\nreturn [{ json: { ...r, _has_error: hasError, _error_msg: errorMsg, explanation: fixCtx.explanation, project: fixCtx.project }}];"
+                                     },
+                      "id":  "62b3cc3f-aeb0-4b05-b596-7bc4f905bc19",
+                      "name":  "Code - Check Retry Render",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       28368,
+                                       4256
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose"
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "retry-render-ok",
+                                                                                   "leftValue":  "={{ $json._has_error }}",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "true"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "aa034555-de65-48ed-ac50-15a152e99885",
+                      "name":  "IF - Retry Render Error",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       28592,
+                                       4256
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027🚨 \u003cb\u003eRENDER FALLIDO — intervención necesaria\u003c/b\u003e\\n📁 Proyecto: \u003ccode\u003e\u0027 + $json.project + \u0027\u003c/code\u003e\\n\\n❌ El auto-fix no resolvió el problema (2 intentos).\\n\\n🔍 Diagnóstico: \u0027 + ($json.explanation || \u0027sin diagnóstico\u0027) + \u0027\\n\\n💬 Error: \u003cpre\u003e\u0027 + String($json._error_msg || \u0027\u0027).slice(0,300) + \u0027\u003c/pre\u003e\u0027 }}",
+                                         "additionalFields":  {
+                                                                  "parse_mode":  "HTML"
+                                                              }
+                                     },
+                      "id":  "aafb6977-d74b-418f-9d58-d47b8d2b739e",
+                      "name":  "Telegram - Render Escalación",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       28800,
+                                       4240
+                                   ],
+                      "webhookId":  "1a622b82-07c8-41df-961c-094872752b3e",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027✅ Auto-fix aplicado y render completado.\\n🔧 Fix: \u0027 + $(\u0027Code - Parse Render Fix\u0027).item.json.fix_action + \u0027\\n📁 Proyecto: \u0027 + $(\u0027Code - Parse Render Fix\u0027).item.json.project }}",
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "id":  "228bdab5-0238-4ee9-bafc-d2495fe4cec3",
+                      "name":  "Telegram - Render Recuperado",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       28608,
+                                       4608
+                                   ],
+                      "webhookId":  "a967ce07-d756-4716-91fb-9507ac75bd3f",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "sendPhoto",
+                                         "chatId":  "5126250705",
+                                         "binaryData":  true,
+                                         "additionalFields":  {
+                                                                  "caption":  "Frame 1 — preview del render"
+                                                              }
+                                     },
+                      "id":  "7c780120-ff0f-4ba6-af07-730e7686fc43",
+                      "name":  "Telegram - Preview 1",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       27280,
+                                       4592
+                                   ],
+                      "webhookId":  "abe88cad-73ed-4d0c-a513-266f3f0b7e1d",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "sendPhoto",
+                                         "chatId":  "5126250705",
+                                         "binaryData":  true,
+                                         "additionalFields":  {
+                                                                  "caption":  "Frame 2 — preview del render"
+                                                              }
+                                     },
+                      "id":  "713b91f0-6d81-4797-acf8-b576d93ca07d",
+                      "name":  "Telegram - Preview 2",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       27680,
+                                       4592
+                                   ],
+                      "webhookId":  "b2c259ed-c9a5-4285-bca8-ad12934ab0c8",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "sendPhoto",
+                                         "chatId":  "5126250705",
+                                         "binaryData":  true,
+                                         "additionalFields":  {
+                                                                  "caption":  "Frame 3 — preview del render"
+                                                              }
+                                     },
+                      "id":  "a82ac661-d9bc-4307-ad0a-de0bca69de1b",
+                      "name":  "Telegram - Preview 3",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       28064,
+                                       4592
+                                   ],
+                      "webhookId":  "963917bf-4c08-4975-b370-3675e034fa32",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "5126250705",
+                                         "text":  "={{ \u0027✅ Render completo — Proyecto: \u003cb\u003e\u0027 + $(\u0027Webhook\u0027).item.json.body.project + \u0027\u003c/b\u003e\\n\\nResponde \u003cb\u003eOK\u003c/b\u003e para subir a Drive, o describe los cambios que quieres.\u0027 }}",
+                                         "additionalFields":  {
+                                                                  "parse_mode":  "HTML"
+                                                              }
+                                     },
+                      "id":  "0188bad5-bcfb-42cc-87d9-cf50266c32a7",
+                      "name":  "Telegram - Pedir Feedback",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       28240,
+                                       4592
+                                   ],
+                      "webhookId":  "5180a3a7-f9a6-4507-85be-5198ed88fe85",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "YvmgWQMqVWetyrBd",
+                                                              "name":  "Telegram account"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \u0027http://187.124.238.94:4000/preview/\u0027 + $(\u0027Webhook\u0027).item.json.body.project + \u0027/1\u0027 }}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "responseFormat":  "file"
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "a93d7363-2c97-44f8-89c1-6225db4ac418",
+                      "name":  "HTTP - Get Preview 1",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       27088,
+                                       4592
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \u0027http://187.124.238.94:4000/preview/\u0027 + $(\u0027Webhook\u0027).item.json.body.project + \u0027/2\u0027 }}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "responseFormat":  "file"
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "87550596-442d-4838-8485-aaf2804418d0",
+                      "name":  "HTTP - Get Preview 2",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       27488,
+                                       4592
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \u0027http://187.124.238.94:4000/preview/\u0027 + $(\u0027Webhook\u0027).item.json.body.project + \u0027/3\u0027 }}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "responseFormat":  "file"
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "b155a437-2bdb-431c-8fc0-59b5ea6a4d0f",
+                      "name":  "HTTP - Get Preview 3",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       27872,
+                                       4592
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Webhook":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "HTTP - Init",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "HTTP - Init":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Telegram - Inicio",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Telegram - Inicio":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "HTTP - Download",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "HTTP - Download":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "HTTP - Transcribe",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "HTTP - Transcribe":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "HTTP - Cut",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "HTTP - Cut":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Telegram - Planificando",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Telegram - Planificando":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Code - Preparar Prompt",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Code - Preparar Prompt":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "HTTP - OpenAI Beats",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "HTTP - OpenAI Beats":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Code - Preparar HTML Prompt",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Code - Parsear Beats":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "HTTP - HTML",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "HTTP - HTML":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Telegram - Renderizando",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Telegram - Renderizando":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "HTTP - Render",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "HTTP - Render":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Code - Check Render",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Code - Check Render":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "IF - Render Error",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "IF - Render Error":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Code - Render Diagnose Prompt",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ],
+                                                               [
+                                                                   {
+                                                                       "node":  "HTTP - Get Preview 1",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Code - Render Diagnose Prompt":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "HTTP - OpenAI Diagnose Render",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "HTTP - OpenAI Diagnose Render":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Code - Parse Render Fix",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Code - Parse Render Fix":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "HTTP - Apply Render Fix",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "HTTP - Apply Render Fix":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Wait 5s",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Wait 5s":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "HTTP - Retry Render",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "HTTP - Retry Render":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Code - Check Retry Render",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Code - Check Retry Render":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "IF - Retry Render Error",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "IF - Retry Render Error":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Telegram - Render Escalación",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ],
+                                                                     [
+                                                                         {
+                                                                             "node":  "Telegram - Render Recuperado",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Telegram - Render Recuperado":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "HTTP - Get Preview 1",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                        "Telegram - Preview 1":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "HTTP - Get Preview 2",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Telegram - Preview 2":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "HTTP - Get Preview 3",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Telegram - Preview 3":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Telegram - Pedir Feedback",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Code - Preparar HTML Prompt":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "HTTP - OpenAI HTML",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "HTTP - OpenAI HTML":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Code - Parsear Beats",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "HTTP - Get Preview 1":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Telegram - Preview 1",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "HTTP - Get Preview 2":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Telegram - Preview 2",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "HTTP - Get Preview 3":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Telegram - Preview 3",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 }
+                    },
+    "active":  true,
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate"
+                 },
+    "versionId":  "ba4cf47b-c947-4f86-9fd8-7116292ef610",
+    "meta":  {
+                 "templateCredsSetupCompleted":  true,
+                 "instanceId":  "ca909d39e8044184bf800b77fc3e957ed8d5a4c580087639692415cc2c770b70"
+             },
+    "id":  "dF120hn4ZDbtLyIB",
+    "tags":  [
+                 {
+                     "updatedAt":  "2026-09-15T03:17:22.956Z",
+                     "createdAt":  "2026-09-15T03:17:22.956Z",
+                     "id":  "V91bcZv3TK25LMBB",
+                     "name":  "Hyperframes"
+                 }
+             ]
 }
