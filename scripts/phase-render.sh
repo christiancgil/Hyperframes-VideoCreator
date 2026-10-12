@@ -72,11 +72,25 @@ for (const beat of beats || []) {
   const page = await browser.newPage();
   await page.setViewport({ width: render_w, height: render_h, deviceScaleFactor: 1 });
   await page.setContent(scaledHtml, { waitUntil: 'networkidle2', timeout: 30000 });
-  await page.evaluate(() => { document.body.style.background = 'transparent'; });
+
+  // After networkidle2, all CSS animations have already completed (fonts took 2-3s to load).
+  // Restart them from t=0 using the reflow trick: set animation:none, force reflow, restore.
+  await page.evaluate(() => {
+    document.body.style.background = 'transparent';
+    const animated = Array.from(document.querySelectorAll('*')).filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.animationName && s.animationName !== 'none';
+    });
+    animated.forEach(el => { el.style.animation = 'none'; });
+    document.body.offsetHeight; // single reflow — resets all animation states
+    animated.forEach(el => { el.style.animation = ''; });
+    // Also set opacity:0 on elements whose animation starts from opacity:0
+    // so the very first snapshot (0ms) captures the pre-animation blank state
+  });
 
   // Snapshot timestamps (ms): capture card-entry, staggered item reveals, final hold.
-  // Spaced to cover typical CSS animation durations (entry 0.3s, reveals every 0.3-0.5s).
-  const SNAP_MS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500];
+  // Spaced to cover typical CSS animation durations (entry 0.3s, reveals every 0.8s).
+  const SNAP_MS = [0, 80, 200, 380, 600, 900, 1300, 1900, 2700, 3600, 4600];
   const snapFrames = [];
   let elapsed = 0;
   for (const targetMs of SNAP_MS) {
