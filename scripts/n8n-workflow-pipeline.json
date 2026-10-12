@@ -24,7 +24,7 @@
         "url": "http://187.124.238.94:4000/init",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ project: $json.body.project, client_name: $json.body.client_name, style: $json.body.style || '' }) }}",
+        "jsonBody": "={{ (() => {\n  const raw = $json.body || $json;\n  const clientSlug = (raw.client_name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-');\n  const date = new Date().toISOString().slice(0, 10);\n  const project = raw.project || (clientSlug + '-' + date);\n  return JSON.stringify({ project, client_name: raw.client_name, style: raw.style || '' });\n})() }}",
         "options": {
           "timeout": 30000
         }
