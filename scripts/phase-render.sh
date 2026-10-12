@@ -152,8 +152,10 @@ for (const beat of beats || []) {
   if (!fs.existsSync(mov)) continue;
   const end = beat.start + beat.duration;
   inputs.push(\`-i "\${mov}"\`);
+  // format=yuv420 on overlay output normalises to limited-range YUV before blending,
+  // preventing full-range PNG pixels (from Puppeteer screenshots) from brightening the base video.
   filterParts.push(\`[\${idx}:v]format=yuva420p,setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
-  filterParts.push(\`[\${lastOut}][ov\${idx}]overlay=0:0:enable='between(t,\${beat.start},\${end})'[v\${idx}]\`);
+  filterParts.push(\`[\${lastOut}][ov\${idx}]overlay=0:0:format=yuv420:enable='between(t,\${beat.start},\${end})'[v\${idx}]\`);
   lastOut = \`v\${idx}\`;
   idx++;
 }
@@ -163,7 +165,8 @@ if (filterParts.length === 0) {
   fs.copyFileSync(editedVideo, finalVideo);
 } else {
   const filter = filterParts.join(';');
-  const cmd = \`\${ffmpeg} \${inputs.join(' ')} -filter_complex "\${filter}" -map "[\${lastOut}]" -map 0:a -c:v libx264 -preset fast -crf 22 -c:a copy "\${finalVideo}" -y\`;
+  // Preserve source color metadata — prevents players from misinterpreting range after overlay chain.
+  const cmd = \`\${ffmpeg} \${inputs.join(' ')} -filter_complex "\${filter}" -map "[\${lastOut}]" -map 0:a -c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -color_range 1 -colorspace 1 -color_trc 1 -color_primaries 1 -c:a copy "\${finalVideo}" -y\`;
   console.log('Compositing cmd:', cmd.slice(0, 120) + '...');
   execSync(cmd, { stdio: ['pipe', 'inherit', 'inherit'] });
 }
