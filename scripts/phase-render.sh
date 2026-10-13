@@ -154,9 +154,10 @@ for (const beat of beats || []) {
   if (!fs.existsSync(mov)) continue;
   const end = beat.start + beat.duration;
   inputs.push(\`-i "\${mov}"\`);
-  // format=yuv420 on overlay output normalises to limited-range YUV before blending,
-  // preventing full-range PNG pixels (from Puppeteer screenshots) from brightening the base video.
-  filterParts.push(\`[\${idx}:v]format=yuva420p,setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
+  // setparams=color_range=tv: ProRes color_range is "unknown" so FFmpeg assumes full-range on decode,
+  // expanding limited-range values (16-235) toward white. setparams overrides this assumption without
+  // converting any pixel values — it just tells the decoder "treat this as limited range".
+  filterParts.push(\`[\${idx}:v]setparams=color_range=tv,format=yuva420p,setpts=PTS+\${beat.start}/TB[ov\${idx}]\`);
   filterParts.push(\`[\${lastOut}][ov\${idx}]overlay=0:0:format=yuv420:enable='between(t,\${beat.start},\${end})'[v\${idx}]\`);
   lastOut = \`v\${idx}\`;
   idx++;
