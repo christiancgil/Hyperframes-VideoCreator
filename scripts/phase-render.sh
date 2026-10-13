@@ -119,7 +119,9 @@ for (const beat of beats || []) {
   concatLines += \`file '\${snapFrames[snapFrames.length - 1].path}'\n\`;
   fs.writeFileSync(concatFile, concatLines);
 
-  execSync(\`\${FFMPEG} -f concat -safe 0 -i "\${concatFile}" -vf "format=yuva420p\${scaleFilter},format=yuva444p12le" -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le "\${movFile}" -y 2>/dev/null\`);
+  // -color_range tv: mark ProRes as limited-range (matches source video) so overlay blending stays in the same range.
+  // Without this tag, ffmpeg assumes full-range when reading the ProRes, mixing 0-255 onto 16-235 → bright artifacts.
+  execSync(\`\${FFMPEG} -f concat -safe 0 -i "\${concatFile}" -vf "format=yuva420p\${scaleFilter},format=yuva444p12le" -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le -color_range tv "\${movFile}" -y 2>/dev/null\`);
 
   // Clean up snapshot PNGs and concat list
   for (const f of snapFrames) fs.unlinkSync(f.path);
